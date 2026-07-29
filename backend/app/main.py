@@ -1,20 +1,35 @@
 from fastapi import FastAPI
+from sqlalchemy import text
 
-app = FastAPI(
-    title="ThreatLens API",
-    description="Enterprise Cyber Threat Intelligence Dashboard",
-    version="1.0.0"
-)
+from app.core.config import settings
+from app.core.database import engine
+
+app = FastAPI(title=settings.APP_NAME)
+
 
 @app.get("/")
-async def root():
+def root():
     return {
-        "message": "Welcome to ThreatLens",
-        "status": "Running Successfully"
+        "application": settings.APP_NAME,
+        "environment": settings.APP_ENV,
+        "debug": settings.DEBUG,
     }
 
+
 @app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy"
-    }
+def health():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+        }
+
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e),
+        }
