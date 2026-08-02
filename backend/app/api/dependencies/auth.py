@@ -1,22 +1,15 @@
-from fastapi import Depends, HTTPException, status
 from typing import Callable
+
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import SessionLocal
+from app.core.database import get_db
 from app.models.user import User
 
 security = HTTPBearer()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_current_user(
@@ -56,6 +49,7 @@ def get_current_user(
 
     return user
 
+
 def require_role(required_role: str) -> Callable:
     def role_checker(
         current_user: User = Depends(get_current_user),
@@ -66,6 +60,6 @@ def require_role(required_role: str) -> Callable:
                 detail="Insufficient permissions",
             )
 
-        return current_user 
+        return current_user
 
     return role_checker

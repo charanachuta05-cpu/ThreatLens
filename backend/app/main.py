@@ -4,17 +4,19 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import engine
 
-from app.api.routes.auth import router as auth_router
-from app.api.routes.users import router as users_router
-from app.api.routes.admin import router as admin_router
+from app.api.routes import auth, users, alerts, admin
 
 
-app = FastAPI(title=settings.APP_NAME)
+app = FastAPI(
+    title=settings.APP_NAME,
+)
+
 
 # Register routers
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(admin_router)
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(admin.router)
+app.include_router(alerts.router)
 
 
 @app.get("/")
