@@ -4,6 +4,8 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import engine
 
+from app.api.routes import threats
+
 from app.api.routes import auth, users, alerts, admin
 
 
@@ -17,6 +19,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
 app.include_router(alerts.router)
+app.include_router(threats.router)
 
 
 @app.get("/")

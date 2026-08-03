@@ -1,46 +1,44 @@
 from datetime import datetime
 
-from sqlalchemy import String, Boolean, DateTime
+from sqlalchemy import String, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
 
-class User(Base):
-    __tablename__ = "users"
+class ThreatIndicator(Base):
+    __tablename__ = "threat_indicators"
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
         index=True
     )
 
-    username: Mapped[str] = mapped_column(
+    indicator_type: Mapped[str] = mapped_column(
         String(50),
-        unique=True,
         nullable=False
     )
 
-    email: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False
-    )
-
-    hashed_password: Mapped[str] = mapped_column(
+    value: Mapped[str] = mapped_column(
         String(255),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String(20),
+        default="LOW"
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(100),
         nullable=False
     )
 
-    role: Mapped[str] = mapped_column(
-    String(20),
-    nullable=False,
-    default="viewer"
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

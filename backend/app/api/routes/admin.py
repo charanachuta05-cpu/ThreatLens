@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies.auth import require_role
+from app.api.dependencies.auth import require_roles
 from app.models.user import User
 
 router = APIRouter(
@@ -11,7 +11,7 @@ router = APIRouter(
 
 @router.get("/dashboard")
 def admin_dashboard(
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_roles("admin")),
 ):
     return {
         "message": "Welcome Admin",

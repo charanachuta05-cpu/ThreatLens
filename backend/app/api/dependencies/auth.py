@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 
+
 security = HTTPBearer()
 
 
@@ -39,7 +40,9 @@ def get_current_user(
             detail="Invalid or expired token",
         )
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = db.query(User).filter(
+        User.id == int(user_id)
+    ).first()
 
     if user is None:
         raise HTTPException(
@@ -50,11 +53,11 @@ def get_current_user(
     return user
 
 
-def require_role(required_role: str) -> Callable:
+def require_roles(*allowed_roles: str) -> Callable:
     def role_checker(
         current_user: User = Depends(get_current_user),
     ):
-        if current_user.role != required_role:
+        if current_user.role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

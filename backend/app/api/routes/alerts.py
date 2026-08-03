@@ -7,10 +7,13 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.auth import (
+    get_current_user,
+    require_roles,
+)
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.alert import ( 
+from app.schemas.alert import (
     AlertCreate,
     AlertResponse,
     AlertUpdate,
@@ -39,7 +42,9 @@ router = APIRouter(
 def create_new_alert(
     alert: AlertCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
 ):
     """
     Create a new alert.
@@ -123,7 +128,9 @@ def update_existing_alert(
     alert_id: int,
     alert_data: AlertUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
 ):
     """
     Update an alert.
@@ -156,7 +163,9 @@ def update_existing_alert(
 def remove_alert(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(
+        require_roles("admin")
+    ),
 ):
     """
     Delete an alert.
