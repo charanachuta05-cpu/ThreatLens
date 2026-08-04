@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatLens WebSocket Test</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #status {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        #messages {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            height: 450px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #eef6ff;
+            border-left: 5px solid #2196f3;
+            border-radius: 5px;
+        }
+
+        pre {
+            margin: 5px 0 0;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>ThreatLens WebSocket Test</h1>
+
+<div id="status">🔄 Connecting...</div>
+
+<div id="messages"></div>
+
+<script>
+
+const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkB0aHJlYXRsZW5zLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4NTg2MzAxMX0.XaZgFg_HIgqt-DNnjUU-vTpwrjV494IDhxFBtNHs8O4";
+
+console.log("========== ThreatLens WebSocket ==========");
+console.log("Script Loaded");
+
+const wsUrl = `ws://127.0.0.1:8000/ws/alerts?token=${token}`;
+
+console.log("Connecting to:");
+console.log(wsUrl);
+
+const socket = new WebSocket(wsUrl);
+
+const statusDiv = document.getElementById("status");
+const messagesDiv = document.getElementById("messages");
+
+socket.onopen = () => {
+
+    console.log("✅ WebSocket Connected");
+
+    statusDiv.innerHTML = "✅ Connected";
+
+};
+
+socket.onmessage = (event) => {
+
+    console.log("📩 Raw Message:");
+    console.log(event.data);
+
+    const data = JSON.parse(event.data);
+
+    const div = document.createElement("div");
+
+    div.className = "message";
+
+    div.innerHTML = `
+        <strong>${new Date().toLocaleTimeString()}</strong>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+    `;
+
+    messagesDiv.prepend(div);
+
+};
+
+socket.onclose = (event) => {
+
+    console.log("❌ Connection Closed");
+
+    console.log("Close Code:", event.code);
+
+    console.log("Reason:", event.reason);
+
+    console.log("Clean:", event.wasClean);
+
+    statusDiv.innerHTML = `❌ Disconnected (Code: ${event.code})`;
+
+};
+
+socket.onerror = (event) => {
+
+    console.log("🚨 WebSocket Error");
+
+    console.error(event);
+
+};
+
+</script>
+
+</body>
+</html>

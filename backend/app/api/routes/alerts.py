@@ -1,3 +1,4 @@
+from app.websockets.manager import manager
 from fastapi import (
     APIRouter,
     Depends,
@@ -36,25 +37,35 @@ router = APIRouter(
     "/",
     response_model=AlertResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new alert",
-    description="Creates a new security alert in the ThreatLens system.",
 )
-def create_new_alert(
+async def create_new_alert(
     alert: AlertCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_roles("admin", "analyst")
     ),
 ):
-    """
-    Create a new alert.
-    """
-
-    return create_alert(
+    created_alert = create_alert(
         db=db,
         alert_data=alert,
         created_by=current_user.id,
     )
+
+    await manager.broadcast(
+        {
+            "event": "alert.created",
+            "data": {
+                "id": created_alert.id,
+                "title": created_alert.title,
+                "description": created_alert.description,
+                "severity": created_alert.severity,
+                "status": created_alert.status,
+                "source": created_alert.source,
+            },
+        }
+    )
+
+    return created_alert
 
 
 @router.get(
@@ -118,28 +129,14 @@ def get_alert(
     return alert
 
 
-@router.put(
-    "/{alert_id}",
-    response_model=AlertResponse,
-    summary="Update an alert",
-    description="Update an existing alert.",
-)
-def update_existing_alert(
+@router.put("/{alert_id}", response_model=AlertResponse)
+async def update_existing_alert(
     alert_id: int,
     alert_data: AlertUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_roles("admin", "analyst")
-    ),
+    current_user: User = Depends(require_roles("admin", "analyst")),
 ):
-    """
-    Update an alert.
-    """
-
-    alert = get_alert_by_id(
-        db=db,
-        alert_id=alert_id,
-    )
+    alert = get_alert_by_id(db=db, alert_id=alert_id)
 
     if not alert:
         raise HTTPException(
@@ -147,30 +144,38 @@ def update_existing_alert(
             detail="Alert not found",
         )
 
-    return update_alert(
+    updated_alert = update_alert(
         db=db,
         alert=alert,
         alert_data=alert_data,
     )
 
+    await manager.broadcast(
+        {
+            "event": "alert.updated",
+            "data": {
+                "id": updated_alert.id,
+                "title": updated_alert.title,
+                "description": updated_alert.description,
+                "severity": updated_alert.severity,
+                "status": updated_alert.status,
+                "source": updated_alert.source,
+                "assigned_to": updated_alert.assigned_to,
+            },
+        }
+    )
+
+    return updated_alert
 
 @router.delete(
     "/{alert_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete an alert",
-    description="Delete an alert from the system.",
 )
-def remove_alert(
+async def remove_alert(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_roles("admin")
-    ),
+    current_user: User = Depends(require_roles("admin")),
 ):
-    """
-    Delete an alert.
-    """
-
     alert = get_alert_by_id(
         db=db,
         alert_id=alert_id,
@@ -182,9 +187,20 @@ def remove_alert(
             detail="Alert not found",
         )
 
+    deleted_alert_id = alert.id
+
     delete_alert(
         db=db,
         alert=alert,
+    )
+
+    await manager.broadcast(
+        {
+            "event": "alert.deleted",
+            "data": {
+                "id": deleted_alert_id,
+            },
+        }
     )
 
     return None

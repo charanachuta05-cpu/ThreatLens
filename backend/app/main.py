@@ -7,6 +7,7 @@ from app.core.database import engine
 from app.api.routes import threats
 
 from app.api.routes import auth, users, alerts, admin
+from app.websockets.routes import router as websocket_router
 
 
 app = FastAPI(
@@ -20,6 +21,8 @@ app.include_router(users.router)
 app.include_router(admin.router)
 app.include_router(alerts.router)
 app.include_router(threats.router)
+app.include_router(websocket_router)
+print("✅ WebSocket router registered")
 
 
 @app.get("/")
