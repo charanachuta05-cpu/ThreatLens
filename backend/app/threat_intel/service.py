@@ -2,15 +2,30 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.schemas.alert import AlertCreate
+
 from app.services.alert_service import (
     create_alert,
     get_alert_by_title,
 )
 
-from app.threat_intel.feed import SIMULATED_FEED
+from app.threat_intel.providers.manager import (
+    ThreatProviderManager,
+)
+
 from app.threat_intel.models import Indicator
 from app.threat_intel.schemas import IndicatorCreate
 
+
+# -------------------------------------------------
+# Threat Intelligence Provider Manager
+# -------------------------------------------------
+
+provider_manager = ThreatProviderManager()
+
+
+# -------------------------------------------------
+# Indicator Utilities
+# -------------------------------------------------
 
 def indicator_exists(
     db: Session,
@@ -27,13 +42,18 @@ def indicator_exists(
     )
 
 
+# -------------------------------------------------
+# Automatic Alert Generation
+# -------------------------------------------------
+
 def generate_alert_for_indicator(
     db: Session,
     indicator: Indicator,
 ):
     """
     Generate alerts for HIGH and CRITICAL indicators.
-    Prevent duplicate alerts.
+
+    Prevents duplicate alerts.
     """
 
     if indicator.severity not in (
@@ -43,7 +63,9 @@ def generate_alert_for_indicator(
         return None
 
 
-    title = f"Threat Indicator: {indicator.value}"
+    title = (
+        f"Threat Indicator: {indicator.value}"
+    )
 
 
     # Duplicate alert protection
@@ -73,18 +95,29 @@ def generate_alert_for_indicator(
     )
 
 
-def ingest_simulated_feed(
+# -------------------------------------------------
+# Threat Intelligence Ingestion Engine
+# -------------------------------------------------
+
+def ingest_threat_intelligence(
     db: Session,
 ) -> int:
     """
-    Ingest threat feed indicators.
-    Automatically generates alerts.
+    Collect indicators from registered providers.
+
+    Generates alerts automatically for
+    HIGH and CRITICAL indicators.
     """
 
     added = 0
 
 
-    for item in SIMULATED_FEED:
+    indicators = (
+        provider_manager.collect_indicators()
+    )
+
+
+    for item in indicators:
 
         if indicator_exists(
             db,
@@ -97,7 +130,9 @@ def ingest_simulated_feed(
             **item
         )
 
+
         db.add(db_indicator)
+
         db.flush()
 
 
@@ -116,6 +151,9 @@ def ingest_simulated_feed(
     return added
 
 
+# -------------------------------------------------
+# Manual Indicator Creation API
+# -------------------------------------------------
 
 def create_indicator(
     db: Session,
@@ -131,19 +169,26 @@ def create_indicator(
 
 
     db.add(db_indicator)
+
     db.commit()
-    db.refresh(db_indicator)
+
+    db.refresh(
+        db_indicator
+    )
 
 
     return db_indicator
 
 
+# -------------------------------------------------
+# Retrieve Indicators
+# -------------------------------------------------
 
 def get_indicators(
     db: Session,
 ):
     """
-    Return all indicators.
+    Return all stored indicators.
     """
 
     return (
