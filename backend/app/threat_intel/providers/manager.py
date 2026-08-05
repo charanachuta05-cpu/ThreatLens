@@ -1,3 +1,4 @@
+from app.threat_intel.providers.base import ThreatProvider
 from app.threat_intel.providers.simulated import (
     SimulatedThreatProvider,
 )
@@ -5,24 +6,30 @@ from app.threat_intel.providers.simulated import (
 
 class ThreatProviderManager:
     """
-    Manages all threat intelligence providers.
+    Coordinates multiple threat intelligence providers.
     """
+
 
     def __init__(self):
 
-        self.providers = [
-            SimulatedThreatProvider()
+        self.providers: list[ThreatProvider] = [
+            SimulatedThreatProvider(),
         ]
 
 
     def collect_indicators(self) -> list[dict]:
+        """
+        Collect indicators from all registered providers.
+        """
 
         indicators = []
+
 
         for provider in self.providers:
 
             indicators.extend(
-                provider.fetch_indicators()
+                provider.collect_indicators()
             )
+
 
         return indicators
