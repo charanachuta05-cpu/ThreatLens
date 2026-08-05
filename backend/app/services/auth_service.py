@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.user import User
+from app.schemas import user
 
 
 def get_user_from_token(token: str, db: Session) -> User | None:
@@ -32,4 +33,8 @@ def get_user_from_token(token: str, db: Session) -> User | None:
         .first()
     )
 
-    return user 
+    print("JWT user_id:", user_id)
+    print("DB URL:", settings.DATABASE_URL)
+    print("Found user:", user)
+
+    return user

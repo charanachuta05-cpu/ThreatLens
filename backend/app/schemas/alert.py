@@ -18,11 +18,10 @@ class AlertStatus(str, Enum):
 
 
 class AlertCreate(BaseModel):
-    title: str = Field(..., min_length=3, max_length=255)
-    description: str = Field(..., min_length=5)
-    severity: AlertSeverity
-    source: str = Field(..., min_length=2, max_length=100)
-    assigned_to: int | None = None
+    title: str
+    description: str | None = None
+    severity: str
+    source: str | None = None
 
 
 class AlertUpdate(BaseModel):

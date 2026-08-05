@@ -2,29 +2,35 @@ from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
 from app.schemas.alert import AlertCreate, AlertUpdate
+from app.services.notification_service import (
+    broadcast_alert_created_background,
+)
 
 
 def create_alert(
     db: Session,
     alert_data: AlertCreate,
-    created_by: int,
+    created_by: int | None,
 ) -> Alert:
     """
-    Create a new alert.
+    Create a new alert and broadcast it to WebSocket clients.
     """
 
     alert = Alert(
         title=alert_data.title,
         description=alert_data.description,
         severity=alert_data.severity,
+        status="OPEN",
         source=alert_data.source,
-        assigned_to=alert_data.assigned_to,
         created_by=created_by,
     )
 
     db.add(alert)
     db.commit()
     db.refresh(alert)
+
+    # Notify connected WebSocket clients
+    broadcast_alert_created_background(alert)
 
     return alert
 
@@ -34,7 +40,7 @@ def get_alert_by_id(
     alert_id: int,
 ) -> Alert | None:
     """
-    Retrieve an alert by ID.
+    Retrieve alert by ID.
     """
 
     return (
@@ -70,7 +76,9 @@ def update_alert(
     Update an existing alert.
     """
 
-    update_data = alert_data.model_dump(exclude_unset=True)
+    update_data = alert_data.model_dump(
+        exclude_unset=True
+    )
 
     for key, value in update_data.items():
         setattr(alert, key, value)
@@ -91,3 +99,18 @@ def delete_alert(
 
     db.delete(alert)
     db.commit()
+
+
+def get_alert_by_title(
+    db: Session,
+    title: str,
+):
+    """
+    Check duplicate alert by title.
+    """
+
+    return (
+        db.query(Alert)
+        .filter(Alert.title == title)
+        .first()
+    )
