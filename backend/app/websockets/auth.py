@@ -1,22 +1,11 @@
-from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.services.auth_service import get_user_from_token
 
 
-def verify_websocket_token(token: str) -> dict:
+def verify_websocket_token(token: str, db: Session):
     """
-    Verify JWT token used for WebSocket authentication.
-    Returns the decoded payload.
+    Verify the WebSocket JWT token and return the authenticated user.
+    Returns None if authentication fails.
     """
-
-    try:
-        payload = jwt.decode(
-            token,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-        )
-
-        return payload
-
-    except JWTError:
-        return None
+    return get_user_from_token(token, db)

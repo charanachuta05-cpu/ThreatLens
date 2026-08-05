@@ -51,19 +51,20 @@ async def create_new_alert(
         created_by=current_user.id,
     )
 
-    await manager.broadcast(
-        {
-            "event": "alert.created",
-            "data": {
-                "id": created_alert.id,
-                "title": created_alert.title,
-                "description": created_alert.description,
-                "severity": created_alert.severity,
-                "status": created_alert.status,
-                "source": created_alert.source,
-            },
-        }
-    )
+    await manager.broadcast_to_roles(
+    ["admin", "analyst"],
+    {
+        "event": "alert.created",
+        "data": {
+            "id": created_alert.id,
+            "title": created_alert.title,
+            "description": created_alert.description,
+            "severity": created_alert.severity,
+            "status": created_alert.status,
+            "source": created_alert.source,
+        },
+    },
+)
 
     return created_alert
 
@@ -150,20 +151,21 @@ async def update_existing_alert(
         alert_data=alert_data,
     )
 
-    await manager.broadcast(
-        {
-            "event": "alert.updated",
-            "data": {
-                "id": updated_alert.id,
-                "title": updated_alert.title,
-                "description": updated_alert.description,
-                "severity": updated_alert.severity,
-                "status": updated_alert.status,
-                "source": updated_alert.source,
-                "assigned_to": updated_alert.assigned_to,
-            },
-        }
-    )
+    await manager.broadcast_to_roles(
+    ["admin"],
+    {
+        "event": "alert.updated",
+        "data": {
+            "id": updated_alert.id,
+            "title": updated_alert.title,
+            "description": updated_alert.description,
+            "severity": updated_alert.severity,
+            "status": updated_alert.status,
+            "source": updated_alert.source,
+            "assigned_to": updated_alert.assigned_to,
+        },
+    },
+)
 
     return updated_alert
 
@@ -194,13 +196,14 @@ async def remove_alert(
         alert=alert,
     )
 
-    await manager.broadcast(
-        {
-            "event": "alert.deleted",
-            "data": {
-                "id": deleted_alert_id,
-            },
-        }
-    )
+    await manager.broadcast_to_role(
+    "admin",
+    {
+        "event": "alert.deleted",
+        "data": {
+            "id": deleted_alert_id,
+        },
+    },
+)
 
     return None
