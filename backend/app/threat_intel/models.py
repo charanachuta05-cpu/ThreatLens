@@ -4,6 +4,7 @@ from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from sqlalchemy import Integer
 
 
 class IndicatorType(str, Enum):
@@ -30,6 +31,12 @@ class Indicator(Base):
     value = Column(String(255), nullable=False, unique=True)
 
     severity = Column(String(20), nullable=False)
+    
+    threat_score = Column(
+    Integer,
+    nullable=False,
+    default=10,
+)
 
     source = Column(String(100), nullable=False)
 

@@ -28,6 +28,9 @@ class IndicatorCreate(BaseModel):
 
 class IndicatorResponse(IndicatorCreate):
     id: int
+
+    threat_score: int
+
     created_at: datetime
 
     model_config = {

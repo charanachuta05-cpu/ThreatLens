@@ -14,6 +14,8 @@ from app.threat_intel.providers.manager import ThreatProviderManager
 from app.threat_intel.models import Indicator
 from app.threat_intel.schemas import IndicatorCreate
 
+from app.threat_intel.enrichment import enrich_indicator
+
 
 # -------------------------------------------------
 # Threat Intelligence Provider Manager
@@ -38,7 +40,9 @@ def indicator_exists(
 
     return (
         db.query(Indicator)
-        .filter(Indicator.value == value)
+        .filter(
+            Indicator.value == value
+        )
         .first()
     )
 
@@ -69,28 +73,32 @@ def generate_alert_for_indicator(
     )
 
 
-    # Prevent duplicate alerts
     if get_alert_by_title(db, title):
         return None
 
 
     admin = (
         db.query(User)
-        .filter(User.role == "admin")
+        .filter(
+            User.role == "admin"
+        )
         .first()
     )
 
 
     alert_data = AlertCreate(
-    title=title,
-    description=(
-        indicator.description
-        if indicator.description
-        else f"Automatically generated alert for malicious indicator {indicator.value}"
-    ),
-    severity=indicator.severity,
-    source=indicator.source,
-)
+        title=title,
+        description=(
+            indicator.description
+            if indicator.description
+            else (
+                "Automatically generated alert "
+                f"for malicious indicator {indicator.value}"
+            )
+        ),
+        severity=indicator.severity,
+        source=indicator.source,
+    )
 
 
     return create_alert(
@@ -110,7 +118,7 @@ async def ingest_threat_intelligence(
     """
     Collect indicators from registered providers.
 
-    Converts provider schema into database model.
+    Applies IOC enrichment before storage.
 
     Generates alerts automatically for
     HIGH and CRITICAL indicators.
@@ -127,7 +135,6 @@ async def ingest_threat_intelligence(
         indicator_data = item.model_dump()
 
 
-        # Duplicate protection
         if indicator_exists(
             db,
             indicator_data["value"],
@@ -135,12 +142,20 @@ async def ingest_threat_intelligence(
             continue
 
 
-        # Map ThreatIndicator -> Indicator model
+        enriched = enrich_indicator(
+            severity=indicator_data["severity"],
+        )
+
+
         db_indicator = Indicator(
             indicator_type=indicator_data["type"],
             value=indicator_data["value"],
             severity=indicator_data["severity"],
+            threat_score=enriched.threat_score,
             source=indicator_data["source"],
+            description=indicator_data.get(
+                "description"
+            ),
         )
 
 
@@ -175,12 +190,23 @@ def create_indicator(
     """
     Create indicator manually.
 
+    Applies IOC enrichment before storage.
+
     Generates alerts automatically for
     HIGH and CRITICAL indicators.
     """
 
+    data = indicator.model_dump()
+
+
+    enriched = enrich_indicator(
+        severity=data["severity"],
+    )
+
+
     db_indicator = Indicator(
-        **indicator.model_dump()
+        **data,
+        threat_score=enriched.threat_score,
     )
 
 
@@ -203,6 +229,7 @@ def create_indicator(
 
 
     return db_indicator
+
 
 # -------------------------------------------------
 # Retrieve Indicators
