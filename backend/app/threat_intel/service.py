@@ -8,9 +8,8 @@ from app.services.alert_service import (
     get_alert_by_title,
 )
 
-from app.threat_intel.providers.manager import (
-    ThreatProviderManager,
-)
+from app.threat_intel.providers.factory import get_providers
+from app.threat_intel.providers.manager import ThreatProviderManager
 
 from app.threat_intel.models import Indicator
 from app.threat_intel.schemas import IndicatorCreate
@@ -20,7 +19,9 @@ from app.threat_intel.schemas import IndicatorCreate
 # Threat Intelligence Provider Manager
 # -------------------------------------------------
 
-provider_manager = ThreatProviderManager()
+provider_manager = ThreatProviderManager(
+    get_providers()
+)
 
 
 # -------------------------------------------------
@@ -68,7 +69,7 @@ def generate_alert_for_indicator(
     )
 
 
-    # Duplicate alert protection
+    # Prevent duplicate alerts
     if get_alert_by_title(db, title):
         return None
 
@@ -81,11 +82,15 @@ def generate_alert_for_indicator(
 
 
     alert_data = AlertCreate(
-        title=title,
-        description=indicator.description,
-        severity=indicator.severity,
-        source=indicator.source,
-    )
+    title=title,
+    description=(
+        indicator.description
+        if indicator.description
+        else f"Automatically generated alert for malicious indicator {indicator.value}"
+    ),
+    severity=indicator.severity,
+    source=indicator.source,
+)
 
 
     return create_alert(
@@ -99,11 +104,13 @@ def generate_alert_for_indicator(
 # Threat Intelligence Ingestion Engine
 # -------------------------------------------------
 
-def ingest_threat_intelligence(
+async def ingest_threat_intelligence(
     db: Session,
 ) -> int:
     """
     Collect indicators from registered providers.
+
+    Converts provider schema into database model.
 
     Generates alerts automatically for
     HIGH and CRITICAL indicators.
@@ -112,22 +119,28 @@ def ingest_threat_intelligence(
     added = 0
 
 
-    indicators = (
-        provider_manager.collect_indicators()
-    )
+    indicators = await provider_manager.collect_all()
 
 
     for item in indicators:
 
+        indicator_data = item.model_dump()
+
+
+        # Duplicate protection
         if indicator_exists(
             db,
-            item["value"],
+            indicator_data["value"],
         ):
             continue
 
 
+        # Map ThreatIndicator -> Indicator model
         db_indicator = Indicator(
-            **item
+            indicator_type=indicator_data["type"],
+            value=indicator_data["value"],
+            severity=indicator_data["severity"],
+            source=indicator_data["source"],
         )
 
 
@@ -161,6 +174,9 @@ def create_indicator(
 ) -> Indicator:
     """
     Create indicator manually.
+
+    Generates alerts automatically for
+    HIGH and CRITICAL indicators.
     """
 
     db_indicator = Indicator(
@@ -170,6 +186,15 @@ def create_indicator(
 
     db.add(db_indicator)
 
+    db.flush()
+
+
+    generate_alert_for_indicator(
+        db,
+        db_indicator,
+    )
+
+
     db.commit()
 
     db.refresh(
@@ -178,7 +203,6 @@ def create_indicator(
 
 
     return db_indicator
-
 
 # -------------------------------------------------
 # Retrieve Indicators

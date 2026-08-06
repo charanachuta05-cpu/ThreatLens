@@ -1,35 +1,37 @@
-from app.threat_intel.providers.base import ThreatProvider
-from app.threat_intel.providers.simulated import (
-    SimulatedThreatProvider,
-)
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ThreatProviderManager:
-    """
-    Coordinates multiple threat intelligence providers.
-    """
 
+    def __init__(self, providers):
+        self.providers = providers
 
-    def __init__(self):
-
-        self.providers: list[ThreatProvider] = [
-            SimulatedThreatProvider(),
-        ]
-
-
-    def collect_indicators(self) -> list[dict]:
-        """
-        Collect indicators from all registered providers.
-        """
+    async def collect_all(self):
 
         indicators = []
 
-
         for provider in self.providers:
 
-            indicators.extend(
-                provider.collect_indicators()
-            )
+            try:
 
+                provider_results = await provider.collect_indicators()
+
+                logger.info(
+                    "%s returned %d indicators",
+                    provider.provider_name,
+                    len(provider_results),
+                )
+
+                indicators.extend(provider_results)
+
+            except Exception as exc:
+
+                logger.exception(
+                    "%s provider failed: %s",
+                    provider.provider_name,
+                    exc,
+                )
 
         return indicators

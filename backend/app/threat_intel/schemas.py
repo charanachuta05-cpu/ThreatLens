@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class IndicatorType(str, Enum):
@@ -33,3 +33,24 @@ class IndicatorResponse(IndicatorCreate):
     model_config = {
         "from_attributes": True
     }
+
+
+# Provider normalized threat intelligence schema
+class ThreatIndicator(BaseModel):
+    """
+    Common format returned by threat intelligence providers.
+    """
+
+    value: str
+    type: str
+    source: str
+
+    severity: str = "LOW"
+
+    reputation: int = 0
+
+    malicious: int = 0
+    suspicious: int = 0
+    harmless: int = 0
+
+    tags: list[str] = Field(default_factory=list)

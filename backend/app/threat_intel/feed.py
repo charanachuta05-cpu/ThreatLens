@@ -48,4 +48,11 @@ SIMULATED_FEED = [
     "source": "TestFeed",
     "description": "Milestone 5.4 final validation"
     },
+    {
+    "indicator_type": "IP",
+    "value": "203.0.113.77",
+    "severity": "CRITICAL",
+    "source": "simulated_feed",
+    "description": "New test malicious IP"
+    },
 ]

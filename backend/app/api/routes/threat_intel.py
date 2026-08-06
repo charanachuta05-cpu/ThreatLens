@@ -9,6 +9,7 @@ from app.threat_intel.schemas import (
 from app.threat_intel.service import (
     create_indicator,
     get_indicators,
+    ingest_threat_intelligence,
 )
 
 
@@ -24,7 +25,17 @@ def get_db():
         yield db
     finally:
         db.close()
+        
+@router.post("/ingest")
+async def ingest_threats(
+    db: Session = Depends(get_db)
+):
+    count = await ingest_threat_intelligence(db)
 
+    return {
+        "message": "Threat intelligence ingestion completed",
+        "indicators_added": count
+    }
 
 @router.post("/", response_model=IndicatorResponse)
 def create(

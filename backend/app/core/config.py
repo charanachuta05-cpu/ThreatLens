@@ -15,6 +15,16 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Threat Intelligence
+    VIRUSTOTAL_API_KEY: str = ""
+    VIRUSTOTAL_ENABLED: bool = False
+
+    ABUSEIPDB_API_KEY: str = ""
+    ABUSEIPDB_ENABLED: bool = False
+
+    OTX_API_KEY: str = ""
+    OTX_ENABLED: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

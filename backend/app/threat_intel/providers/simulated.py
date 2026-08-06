@@ -1,35 +1,29 @@
 from app.threat_intel.providers.base import ThreatProvider
+from app.threat_intel.schemas import ThreatIndicator
+
+from app.threat_intel.feed import SIMULATED_FEED
 
 
 class SimulatedThreatProvider(ThreatProvider):
-    """
-    Development threat intelligence provider.
 
-    Used for testing ingestion,
-    alert generation, and WebSocket delivery.
-    """
+    @property
+    def provider_name(self):
+        return "Simulated"
 
-    name = "SimulatedProvider"
+    async def collect_indicators(self):
 
+        indicators = []
 
-    def collect_indicators(self) -> list[dict]:
-        """
-        Return simulated threat indicators.
-        """
+        for item in SIMULATED_FEED:
 
-        return [
-            {
-                "indicator_type": "ip",
-                "value": "203.0.113.10",
-                "severity": "HIGH",
-                "source": self.name,
-                "description": "Suspicious IP activity detected",
-            },
-            {
-                "indicator_type": "domain",
-                "value": "evil-example.com",
-                "severity": "CRITICAL",
-                "source": self.name,
-                "description": "Malicious domain detected",
-            },
-        ]
+            indicators.append(
+                ThreatIndicator(
+                    value=item["value"],
+                    type=item["indicator_type"],
+                    source=self.provider_name,
+                    severity=item.get("severity", "medium"),
+                    tags=item.get("tags", []),
+                )
+            )
+
+        return indicators

@@ -1,3 +1,5 @@
+import asyncio
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.database import SessionLocal
@@ -15,7 +17,10 @@ def threat_feed_job():
     db = SessionLocal()
 
     try:
-        added = ingest_threat_intelligence(db)
+
+        added = asyncio.run(
+            ingest_threat_intelligence(db)
+        )
 
         print(
             f"[Threat Worker] Added {added} new indicators"

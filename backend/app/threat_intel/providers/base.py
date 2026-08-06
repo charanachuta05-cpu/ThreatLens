@@ -1,35 +1,23 @@
 from abc import ABC, abstractmethod
+from typing import List
+
+from app.threat_intel.schemas import ThreatIndicator
 
 
 class ThreatProvider(ABC):
     """
-    Base interface for all threat intelligence providers.
-
-    Every provider (Simulated, VirusTotal, MISP, OTX, etc.)
-    must implement this contract.
+    Base class for all Threat Intelligence providers.
     """
 
-    name: str = "unknown"
-
+    @property
+    @abstractmethod
+    def provider_name(self) -> str:
+        """Human-readable provider name."""
+        pass
 
     @abstractmethod
-    def collect_indicators(self) -> list[dict]:
+    async def collect_indicators(self) -> List[ThreatIndicator]:
         """
-        Collect threat indicators from the provider.
-
-        Returns:
-            List of normalized indicator dictionaries.
-
-        Example:
-            [
-                {
-                    "indicator_type": "ip",
-                    "value": "192.168.1.10",
-                    "severity": "HIGH",
-                    "source": "ProviderName",
-                    "description": "Malicious activity detected"
-                }
-            ]
+        Collect and return normalized indicators.
         """
-
         pass
