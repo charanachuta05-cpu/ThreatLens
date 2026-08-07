@@ -31,12 +31,18 @@ class Indicator(Base):
     value = Column(String(255), nullable=False, unique=True)
 
     severity = Column(String(20), nullable=False)
-    
+
     threat_score = Column(
-    Integer,
-    nullable=False,
-    default=10,
-)
+        Integer,
+        nullable=False,
+        default=10,
+    )
+
+    reputation_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
 
     source = Column(String(100), nullable=False)
 

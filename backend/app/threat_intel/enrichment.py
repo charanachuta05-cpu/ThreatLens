@@ -1,39 +1,39 @@
 from dataclasses import dataclass
 
 from app.threat_intel.scoring import calculate_threat_score
+from app.threat_intel.reputation import calculate_reputation
+from app.threat_intel.schemas import ThreatIndicator
 
 
 @dataclass(slots=True)
 class EnrichedIndicator:
     """
-    Result returned by the enrichment pipeline.
+    Result of IOC enrichment.
 
-    Additional fields (reputation, confidence, tags, etc.)
-    will be added in future milestones.
+    Future versions will include:
+
+    confidence_score
+    tags
+    provider metadata
     """
 
     threat_score: int
 
+    reputation_score: int
+
 
 def enrich_indicator(
-    *,
-    severity: str,
+    indicator: ThreatIndicator,
 ) -> EnrichedIndicator:
     """
-    Enrich an indicator before it is stored.
-
-    Version 1:
-        - Calculates the threat score.
-
-    Future versions:
-        - Reputation scoring
-        - Confidence calculation
-        - Threat tags
-        - External provider enrichment
+    Run the IOC enrichment pipeline.
     """
 
     return EnrichedIndicator(
         threat_score=calculate_threat_score(
-            severity
-        )
+            indicator.severity
+        ),
+        reputation_score=calculate_reputation(
+            indicator
+        ),
     )

@@ -31,6 +31,8 @@ class IndicatorResponse(IndicatorCreate):
 
     threat_score: int
 
+    reputation_score: int
+
     created_at: datetime
 
     model_config = {

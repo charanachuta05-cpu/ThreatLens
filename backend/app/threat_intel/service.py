@@ -8,14 +8,14 @@ from app.services.alert_service import (
     get_alert_by_title,
 )
 
+from app.threat_intel.enrichment import enrich_indicator
+from app.threat_intel.models import Indicator
 from app.threat_intel.providers.factory import get_providers
 from app.threat_intel.providers.manager import ThreatProviderManager
-
-from app.threat_intel.models import Indicator
-from app.threat_intel.schemas import IndicatorCreate
-
-from app.threat_intel.enrichment import enrich_indicator
-
+from app.threat_intel.schemas import (
+    IndicatorCreate,
+    ThreatIndicator,
+)
 
 # -------------------------------------------------
 # Threat Intelligence Provider Manager
@@ -67,15 +67,15 @@ def generate_alert_for_indicator(
     ):
         return None
 
-
     title = (
         f"Threat Indicator: {indicator.value}"
     )
 
-
-    if get_alert_by_title(db, title):
+    if get_alert_by_title(
+        db,
+        title,
+    ):
         return None
-
 
     admin = (
         db.query(User)
@@ -85,21 +85,19 @@ def generate_alert_for_indicator(
         .first()
     )
 
-
     alert_data = AlertCreate(
         title=title,
         description=(
             indicator.description
             if indicator.description
             else (
-                "Automatically generated alert "
+                f"Automatically generated alert "
                 f"for malicious indicator {indicator.value}"
             )
         ),
         severity=indicator.severity,
         source=indicator.source,
     )
-
 
     return create_alert(
         db=db,
@@ -126,14 +124,11 @@ async def ingest_threat_intelligence(
 
     added = 0
 
-
     indicators = await provider_manager.collect_all()
-
 
     for item in indicators:
 
         indicator_data = item.model_dump()
-
 
         if indicator_exists(
             db,
@@ -141,40 +136,32 @@ async def ingest_threat_intelligence(
         ):
             continue
 
-
-        enriched = enrich_indicator(
-            severity=indicator_data["severity"],
-        )
-
+        enriched = enrich_indicator(item)
 
         db_indicator = Indicator(
             indicator_type=indicator_data["type"],
             value=indicator_data["value"],
             severity=indicator_data["severity"],
             threat_score=enriched.threat_score,
+            reputation_score=enriched.reputation_score,
             source=indicator_data["source"],
             description=indicator_data.get(
                 "description"
             ),
         )
 
-
         db.add(db_indicator)
 
         db.flush()
-
 
         generate_alert_for_indicator(
             db,
             db_indicator,
         )
 
-
         added += 1
 
-
     db.commit()
-
 
     return added
 
@@ -188,45 +175,51 @@ def create_indicator(
     indicator: IndicatorCreate,
 ) -> Indicator:
     """
-    Create indicator manually.
+    Create an indicator manually.
 
-    Applies IOC enrichment before storage.
-
-    Generates alerts automatically for
-    HIGH and CRITICAL indicators.
+    Manual indicators do not yet have
+    provider reputation metadata, so
+    default values are used.
     """
 
     data = indicator.model_dump()
 
-
-    enriched = enrich_indicator(
+    normalized = ThreatIndicator(
+        value=data["value"],
+        type=data["indicator_type"],
+        source=data["source"],
         severity=data["severity"],
+        reputation=0,
+        malicious=0,
+        suspicious=0,
+        harmless=0,
+        tags=[],
     )
 
+    enriched = enrich_indicator(
+        normalized
+    )
 
     db_indicator = Indicator(
         **data,
         threat_score=enriched.threat_score,
+        reputation_score=enriched.reputation_score,
     )
-
 
     db.add(db_indicator)
 
     db.flush()
-
 
     generate_alert_for_indicator(
         db,
         db_indicator,
     )
 
-
     db.commit()
 
     db.refresh(
         db_indicator
     )
-
 
     return db_indicator
 
