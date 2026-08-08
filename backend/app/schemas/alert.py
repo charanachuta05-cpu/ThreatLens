@@ -18,31 +18,69 @@ class AlertStatus(str, Enum):
 
 
 class AlertCreate(BaseModel):
-    title: str
-    description: str | None = None
-    severity: str
-    source: str | None = None
+    title: str = Field(
+        min_length=3,
+        max_length=255,
+    )
+
+    description: str = Field(
+        min_length=1,
+    )
+
+    severity: AlertSeverity
+
+    source: str = Field(
+        min_length=2,
+        max_length=100,
+    )
 
 
 class AlertUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=3, max_length=255)
-    description: str | None = Field(default=None, min_length=5)
+    title: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=255,
+    )
+
+    description: str | None = Field(
+        default=None,
+        min_length=1,
+    )
+
     severity: AlertSeverity | None = None
+
     status: AlertStatus | None = None
-    source: str | None = Field(default=None, min_length=2, max_length=100)
+
+    source: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
     assigned_to: int | None = None
 
 
 class AlertResponse(BaseModel):
     id: int
+
     title: str
+
     description: str
+
     severity: AlertSeverity
+
     status: AlertStatus
+
     source: str
+
     created_by: int
+
     assigned_to: int | None
+
     created_at: datetime
+
     updated_at: datetime | None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )

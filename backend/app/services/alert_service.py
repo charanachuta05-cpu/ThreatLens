@@ -2,9 +2,6 @@ from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
 from app.schemas.alert import AlertCreate, AlertUpdate
-from app.services.notification_service import (
-    broadcast_alert_created_background,
-)
 
 
 def create_alert(
@@ -13,7 +10,10 @@ def create_alert(
     created_by: int | None,
 ) -> Alert:
     """
-    Create a new alert and broadcast it to WebSocket clients.
+    Create a new alert.
+
+    Database responsibility only.
+    WebSocket broadcasting is handled by the API route.
     """
 
     alert = Alert(
@@ -29,9 +29,6 @@ def create_alert(
     db.commit()
     db.refresh(alert)
 
-    # Notify connected WebSocket clients
-    broadcast_alert_created_background(alert)
-
     return alert
 
 
@@ -40,7 +37,7 @@ def get_alert_by_id(
     alert_id: int,
 ) -> Alert | None:
     """
-    Retrieve alert by ID.
+    Retrieve an alert by ID.
     """
 
     return (
@@ -106,7 +103,7 @@ def get_alert_by_title(
     title: str,
 ):
     """
-    Check duplicate alert by title.
+    Check whether an alert with the given title exists.
     """
 
     return (

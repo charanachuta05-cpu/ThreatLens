@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>ThreatLens WebSocket Test</title>
 
     <style>
@@ -48,80 +49,192 @@
 
 <body>
 
-<h1>ThreatLens WebSocket Test</h1>
+    <h1>ThreatLens WebSocket Test</h1>
 
-<div id="status">🔄 Connecting...</div>
+    <div id="status">
+        🔄 Connecting...
+    </div>
 
-<div id="messages"></div>
+    <div id="messages"></div>
 
-<script>
+    <script>
 
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkB0aHJlYXRsZW5zLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4NjA4MzU5NH0.5p5YABp81xln775jAaDMfD0MgeKwvPwr-noiCcII_Dg";
+        // ==========================================
+        // THREATLENS WEBSOCKET CONFIGURATION
+        // ==========================================
 
-console.log("========== ThreatLens WebSocket ==========");
-console.log("Script Loaded");
+        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkB0aHJlYXRsZW5zLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4NjE5OTk1NX0.QqLEm56643y5lWBfLNeMyCcGLYRoPmMsAPtp6fJcJLc";
 
-const wsUrl = "ws://127.0.0.1:8000/ws/alerts?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkB0aHJlYXRsZW5zLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4NjA4MzU5NH0.5p5YABp81xln775jAaDMfD0MgeKwvPwr-noiCcII_Dg";
+        const statusDiv = document.getElementById("status");
+        const messagesDiv = document.getElementById("messages");
 
-console.log("Connecting to:");
-console.log(wsUrl);
 
-const socket = new WebSocket(wsUrl);
+        // ==========================================
+        // TOKEN VALIDATION
+        // ==========================================
 
-const statusDiv = document.getElementById("status");
-const messagesDiv = document.getElementById("messages");
+        if (!token || token === "YOUR_FRESH_JWT_TOKEN_HERE") {
 
-socket.onopen = () => {
+            console.error("🚨 JWT token is missing.");
 
-    console.log("✅ WebSocket Connected");
+            statusDiv.innerHTML = "❌ JWT Token Missing";
 
-    statusDiv.innerHTML = "✅ Connected";
+        } else {
 
-};
+            // ==========================================
+            // WEBSOCKET URL
+            // ==========================================
 
-socket.onmessage = (event) => {
+            const wsUrl =
+                `ws://127.0.0.1:8000/ws/alerts?token=${encodeURIComponent(token)}`;
 
-    console.log("📩 Raw Message:");
-    console.log(event.data);
+            console.log("==========================================");
+            console.log("ThreatLens WebSocket");
+            console.log("==========================================");
 
-    const data = JSON.parse(event.data);
+            console.log("Script Loaded");
 
-    const div = document.createElement("div");
+            console.log("Connecting to:");
+            console.log(
+                "ws://127.0.0.1:8000/ws/alerts?token=<REDACTED>"
+            );
 
-    div.className = "message";
 
-    div.innerHTML = `
-        <strong>${new Date().toLocaleTimeString()}</strong>
-        <pre>${JSON.stringify(data, null, 2)}</pre>
-    `;
+            // ==========================================
+            // CREATE WEBSOCKET CONNECTION
+            // ==========================================
 
-    messagesDiv.prepend(div);
+            const socket = new WebSocket(wsUrl);
 
-};
 
-socket.onclose = (event) => {
+            // ==========================================
+            // CONNECTION OPEN
+            // ==========================================
 
-    console.log("❌ Connection Closed");
+            socket.onopen = () => {
 
-    console.log("Close Code:", event.code);
+                console.log("✅ WebSocket Connected");
 
-    console.log("Reason:", event.reason);
+                statusDiv.innerHTML = "✅ Connected";
 
-    console.log("Clean:", event.wasClean);
+                addMessage({
+                    event: "websocket.connected",
+                    message: "Successfully connected to ThreatLens"
+                });
+            };
 
-    statusDiv.innerHTML = `❌ Disconnected (Code: ${event.code})`;
 
-};
+            // ==========================================
+            // MESSAGE RECEIVED
+            // ==========================================
 
-socket.onerror = (event) => {
+            socket.onmessage = (event) => {
 
-    console.log("🚨 WebSocket Error");
+                console.log("📩 Raw Message:");
+                console.log(event.data);
 
-    console.error(event);
+                try {
 
-};
+                    const data = JSON.parse(event.data);
 
-</script>
+                    addMessage(data);
+
+                } catch (error) {
+
+                    console.error(
+                        "❌ Failed to parse WebSocket message:",
+                        error
+                    );
+
+                    addMessage({
+                        event: "websocket.raw_message",
+                        data: event.data
+                    });
+                }
+            };
+
+
+            // ==========================================
+            // CONNECTION ERROR
+            // ==========================================
+
+            socket.onerror = (event) => {
+
+                console.error("🚨 WebSocket Error:", event);
+
+                statusDiv.innerHTML = "🚨 WebSocket Error";
+            };
+
+
+            // ==========================================
+            // CONNECTION CLOSED
+            // ==========================================
+
+            socket.onclose = (event) => {
+
+                console.log("❌ Connection Closed");
+
+                console.log("Close Code:", event.code);
+
+                console.log("Reason:", event.reason);
+
+                console.log("Clean:", event.wasClean);
+
+                statusDiv.innerHTML =
+                    `❌ Disconnected (Code: ${event.code})`;
+
+                addMessage({
+                    event: "websocket.closed",
+                    code: event.code,
+                    reason: event.reason || "No reason provided",
+                    clean: event.wasClean
+                });
+            };
+        }
+
+
+        // ==========================================
+        // DISPLAY MESSAGE
+        // ==========================================
+
+        function addMessage(data) {
+
+            if (!messagesDiv) {
+
+                console.warn(
+                    "Messages container not found."
+                );
+
+                return;
+            }
+
+            const div = document.createElement("div");
+
+            div.className = "message";
+
+            const timestamp =
+                new Date().toLocaleTimeString();
+
+            const pre =
+                document.createElement("pre");
+
+            pre.textContent =
+                JSON.stringify(data, null, 2);
+
+            const strong =
+                document.createElement("strong");
+
+            strong.textContent =
+                timestamp;
+
+            div.appendChild(strong);
+
+            div.appendChild(pre);
+
+            messagesDiv.prepend(div);
+        }
+
+    </script>
 
 </body>
 </html>

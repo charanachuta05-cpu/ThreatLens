@@ -1,4 +1,3 @@
-from app.websockets.manager import manager
 from fastapi import (
     APIRouter,
     Depends,
@@ -26,6 +25,8 @@ from app.services.alert_service import (
     get_alerts,
     update_alert,
 )
+from app.websockets.manager import manager
+
 
 router = APIRouter(
     prefix="/alerts",
@@ -45,6 +46,11 @@ async def create_new_alert(
         require_roles("admin", "analyst")
     ),
 ):
+    """
+    Create a new alert and broadcast the event
+    to administrators and analysts.
+    """
+
     created_alert = create_alert(
         db=db,
         alert_data=alert,
@@ -52,19 +58,21 @@ async def create_new_alert(
     )
 
     await manager.broadcast_to_roles(
-    ["admin", "analyst"],
-    {
-        "event": "alert.created",
-        "data": {
-            "id": created_alert.id,
-            "title": created_alert.title,
-            "description": created_alert.description,
-            "severity": created_alert.severity,
-            "status": created_alert.status,
-            "source": created_alert.source,
+        ["admin", "analyst"],
+        {
+            "event": "alert.created",
+            "data": {
+                "id": created_alert.id,
+                "title": created_alert.title,
+                "description": created_alert.description,
+                "severity": created_alert.severity,
+                "status": created_alert.status,
+                "source": created_alert.source,
+                "created_by": created_alert.created_by,
+                "assigned_to": created_alert.assigned_to,
+            },
         },
-    },
-)
+    )
 
     return created_alert
 
@@ -130,14 +138,27 @@ def get_alert(
     return alert
 
 
-@router.put("/{alert_id}", response_model=AlertResponse)
+@router.put(
+    "/{alert_id}",
+    response_model=AlertResponse,
+)
 async def update_existing_alert(
     alert_id: int,
     alert_data: AlertUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "analyst")),
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
 ):
-    alert = get_alert_by_id(db=db, alert_id=alert_id)
+    """
+    Update an alert and broadcast the event
+    to administrators and analysts.
+    """
+
+    alert = get_alert_by_id(
+        db=db,
+        alert_id=alert_id,
+    )
 
     if not alert:
         raise HTTPException(
@@ -152,22 +173,24 @@ async def update_existing_alert(
     )
 
     await manager.broadcast_to_roles(
-    ["admin"],
-    {
-        "event": "alert.updated",
-        "data": {
-            "id": updated_alert.id,
-            "title": updated_alert.title,
-            "description": updated_alert.description,
-            "severity": updated_alert.severity,
-            "status": updated_alert.status,
-            "source": updated_alert.source,
-            "assigned_to": updated_alert.assigned_to,
+        ["admin", "analyst"],
+        {
+            "event": "alert.updated",
+            "data": {
+                "id": updated_alert.id,
+                "title": updated_alert.title,
+                "description": updated_alert.description,
+                "severity": updated_alert.severity,
+                "status": updated_alert.status,
+                "source": updated_alert.source,
+                "created_by": updated_alert.created_by,
+                "assigned_to": updated_alert.assigned_to,
+            },
         },
-    },
-)
+    )
 
     return updated_alert
+
 
 @router.delete(
     "/{alert_id}",
@@ -176,8 +199,15 @@ async def update_existing_alert(
 async def remove_alert(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin")),
+    current_user: User = Depends(
+        require_roles("admin")
+    ),
 ):
+    """
+    Delete an alert and broadcast the deletion event
+    to administrators.
+    """
+
     alert = get_alert_by_id(
         db=db,
         alert_id=alert_id,
@@ -197,13 +227,13 @@ async def remove_alert(
     )
 
     await manager.broadcast_to_role(
-    "admin",
-    {
-        "event": "alert.deleted",
-        "data": {
-            "id": deleted_alert_id,
+        "admin",
+        {
+            "event": "alert.deleted",
+            "data": {
+                "id": deleted_alert_id,
+            },
         },
-    },
-)
+    )
 
     return None
