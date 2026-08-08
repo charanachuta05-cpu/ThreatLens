@@ -1,54 +1,113 @@
-import httpx
-
 from app.threat_intel.providers.base import ThreatProvider
+from app.threat_intel.providers.client import ThreatProviderClient
 from app.threat_intel.schemas import ThreatIndicator
 
 
 class VirusTotalProvider(ThreatProvider):
+    """
+    VirusTotal threat intelligence provider.
+    """
 
-    BASE_URL = "https://www.virustotal.com/api/v3"
+    BASE_URL = (
+        "https://www.virustotal.com/api/v3"
+    )
 
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(
+        self,
+        api_key: str,
+    ):
+        self.client = ThreatProviderClient(
+            api_key
+        )
 
     @property
-    def provider_name(self):
+    def provider_name(self) -> str:
         return "VirusTotal"
 
-    async def get_ip_report(self, ip: str):
+    async def get_ip_report(
+        self,
+        ip: str,
+    ) -> ThreatIndicator:
+        """
+        Retrieve and normalize a VirusTotal
+        IP reputation report.
+        """
 
-        headers = {
-            "x-apikey": self.api_key
-        }
+        response = await self.client.get(
+            url=(
+                f"{self.BASE_URL}"
+                f"/ip_addresses/{ip}"
+            ),
+            headers={
+                "x-apikey": self.client.api_key,
+            },
+        )
 
-        async with httpx.AsyncClient(timeout=20) as client:
+        data = response["data"]
+        attributes = data["attributes"]
 
-            response = await client.get(
-                f"{self.BASE_URL}/ip_addresses/{ip}",
-                headers=headers,
-            )
+        stats = attributes.get(
+            "last_analysis_stats",
+            {},
+        )
 
-        response.raise_for_status()
+        malicious = stats.get(
+            "malicious",
+            0,
+        )
 
-        data = response.json()["data"]
-        attr = data["attributes"]
+        suspicious = stats.get(
+            "suspicious",
+            0,
+        )
 
-        stats = attr["last_analysis_stats"]
+        if malicious >= 15:
+            severity = "CRITICAL"
+
+        elif malicious >= 5:
+            severity = "HIGH"
+
+        elif malicious > 0 or suspicious > 0:
+            severity = "MEDIUM"
+
+        else:
+            severity = "LOW"
 
         return ThreatIndicator(
             value=data["id"],
-            type="ip",
+            type="IP",
             source=self.provider_name,
-            reputation=attr.get("reputation", 0),
-            malicious=stats.get("malicious", 0),
-            suspicious=stats.get("suspicious", 0),
-            harmless=stats.get("harmless", 0),
-            severity="high" if stats.get("malicious", 0) > 0 else "low",
-            tags=attr.get("tags", []),
+            severity=severity,
+            reputation=max(
+                0,
+                min(
+                    attributes.get(
+                        "reputation",
+                        0,
+                    ),
+                    100,
+                ),
+            ),
+            malicious=malicious,
+            suspicious=suspicious,
+            harmless=stats.get(
+                "harmless",
+                0,
+            ),
+            tags=attributes.get(
+                "tags",
+                [],
+            ),
         )
 
-    async def collect_indicators(self):
+    async def collect_indicators(
+        self,
+    ) -> list[ThreatIndicator]:
         """
-        Will be expanded later for feed ingestion.
+        Bulk feed collection placeholder.
+
+        Individual IOC lookup is currently
+        supported through get_ip_report().
         """
+
         return []

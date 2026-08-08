@@ -1,4 +1,5 @@
-from app.threat_intel.models import ThreatSeverity
+from app.threat_intel.schemas import ThreatSeverity
+
 
 SEVERITY_SCORE = {
     ThreatSeverity.LOW.value: 30,
@@ -8,19 +9,22 @@ SEVERITY_SCORE = {
 }
 
 
-def calculate_threat_score(severity: str) -> int:
+def calculate_threat_score(
+    severity: str,
+) -> int:
     """
-    Calculate a threat score based on indicator severity.
+    Calculate threat score from indicator severity.
 
-    Version 1 scoring model.
-
-    LOW        -> 30
-    MEDIUM     -> 60
-    HIGH       -> 85
-    CRITICAL   -> 100
+    LOW      -> 30
+    MEDIUM   -> 60
+    HIGH     -> 85
+    CRITICAL -> 100
     """
+
+    if not isinstance(severity, str):
+        return 10
 
     return SEVERITY_SCORE.get(
-        severity.upper(),
+        severity.strip().upper(),
         10,
     )

@@ -1,10 +1,9 @@
 from enum import Enum
 
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from sqlalchemy import Integer
 
 
 class IndicatorType(str, Enum):
@@ -24,13 +23,30 @@ class ThreatSeverity(str, Enum):
 class Indicator(Base):
     __tablename__ = "indicators"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
 
-    indicator_type = Column(String(20), nullable=False)
+    indicator_type = Column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
 
-    value = Column(String(255), nullable=False, unique=True)
+    value = Column(
+        String(255),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
 
-    severity = Column(String(20), nullable=False)
+    severity = Column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
 
     threat_score = Column(
         Integer,
@@ -44,11 +60,30 @@ class Indicator(Base):
         default=0,
     )
 
-    source = Column(String(100), nullable=False)
+    confidence_score = Column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
 
-    description = Column(String(500), nullable=True)
+    source = Column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    description = Column(
+        String(500),
+        nullable=True,
+    )
+
+    tags = Column(
+        String(1000),
+        nullable=True,
+    )
 
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
+        nullable=False,
     )

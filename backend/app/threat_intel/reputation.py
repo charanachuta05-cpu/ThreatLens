@@ -5,14 +5,12 @@ def calculate_reputation(
     indicator: ThreatIndicator,
 ) -> int:
     """
-    Calculate an IOC reputation score.
-
-    Version 1:
+    Calculate IOC reputation score.
 
     malicious × 20
     suspicious × 10
 
-    Maximum score = 100
+    Maximum = 100.
     """
 
     score = (
@@ -20,4 +18,7 @@ def calculate_reputation(
         + indicator.suspicious * 10
     )
 
-    return min(score, 100)
+    return min(
+        max(score, 0),
+        100,
+    )
