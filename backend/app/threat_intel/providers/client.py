@@ -23,6 +23,14 @@ class ThreatProviderClient:
     ) -> dict:
         """
         Perform an asynchronous GET request.
+
+        Raises:
+            ValueError:
+                When the provider API key is missing.
+            httpx.HTTPError:
+                When the HTTP request fails.
+            ValueError:
+                When the response body is not valid JSON.
         """
 
         if not self.api_key:
@@ -32,10 +40,14 @@ class ThreatProviderClient:
 
         request_headers = headers or {}
 
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-        ) as client:
+        timeout = httpx.Timeout(
+            self.timeout,
+            connect=self.timeout,
+        )
 
+        async with httpx.AsyncClient(
+            timeout=timeout,
+        ) as client:
             response = await client.get(
                 url,
                 headers=request_headers,
@@ -44,4 +56,11 @@ class ThreatProviderClient:
 
             response.raise_for_status()
 
-            return response.json()
+            data = response.json()
+
+            if not isinstance(data, dict):
+                raise ValueError(
+                    "Provider response must be a JSON object."
+                )
+
+            return data

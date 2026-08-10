@@ -31,8 +31,43 @@ def _build_threat_indicator(
         malicious=0,
         suspicious=0,
         harmless=0,
-        tags=[],
+        tags=_parse_tags(indicator.tags),
     )
+
+
+def _parse_tags(
+    tags: str | None,
+) -> list[str]:
+    """
+    Convert database CSV tags into a clean,
+    deterministic list.
+
+    Example:
+        "ip,high,high-risk"
+
+    becomes:
+        ["ip", "high", "high-risk"]
+    """
+
+    if not tags:
+        return []
+
+    parsed_tags = []
+    seen = set()
+
+    for tag in tags.split(","):
+        cleaned_tag = tag.strip()
+
+        if not cleaned_tag:
+            continue
+
+        if cleaned_tag in seen:
+            continue
+
+        seen.add(cleaned_tag)
+        parsed_tags.append(cleaned_tag)
+
+    return parsed_tags
 
 
 def investigate_indicator(
@@ -40,7 +75,8 @@ def investigate_indicator(
     indicator_id: int,
 ) -> InvestigationResponse:
     """
-    Generate a complete investigation report.
+    Generate a complete investigation report
+    using persisted enrichment results.
     """
 
     indicator = (
@@ -70,10 +106,10 @@ def investigate_indicator(
         .all()
     )
 
-    confidence_score = round(
-        indicator.threat_score * 0.6
-        + indicator.reputation_score * 0.4
-    )
+    # IMPORTANT:
+    # Use the confidence score persisted by the
+    # enrichment pipeline. Do not recalculate it.
+    confidence_score = indicator.confidence_score
 
     recommendation = generate_recommendation(
         indicator.threat_score,
@@ -92,14 +128,12 @@ def investigate_indicator(
     )
 
     for other in all_indicators:
-
         comparison = correlate_indicators(
             current_indicator,
             _build_threat_indicator(other),
         )
 
         if comparison.related:
-
             related_indicators.append(
                 {
                     "id": other.id,
@@ -113,7 +147,7 @@ def investigate_indicator(
             )
 
     related_indicators.sort(
-        key=lambda x: x["correlation_score"],
+        key=lambda item: item["correlation_score"],
         reverse=True,
     )
 
@@ -130,7 +164,9 @@ def investigate_indicator(
             reputation_score=indicator.reputation_score,
             confidence_score=confidence_score,
         ),
-        tags=[],
+        tags=_parse_tags(
+            indicator.tags
+        ),
         related_indicators=related_indicators,
         alerts=[
             {

@@ -8,43 +8,29 @@ class VirusTotalProvider(ThreatProvider):
     VirusTotal threat intelligence provider.
     """
 
-    BASE_URL = (
-        "https://www.virustotal.com/api/v3"
-    )
+    BASE_URL = "https://www.virustotal.com/api/v3"
 
     def __init__(
         self,
         api_key: str,
     ):
-        self.client = ThreatProviderClient(
-            api_key
-        )
+        self.client = ThreatProviderClient(api_key)
 
     @property
     def provider_name(self) -> str:
         return "VirusTotal"
 
-    async def get_ip_report(
+    def _normalize_report(
         self,
-        ip: str,
+        data: dict,
+        indicator_type: str,
     ) -> ThreatIndicator:
         """
-        Retrieve and normalize a VirusTotal
-        IP reputation report.
+        Convert a VirusTotal response into the
+        normalized ThreatIndicator schema.
         """
 
-        response = await self.client.get(
-            url=(
-                f"{self.BASE_URL}"
-                f"/ip_addresses/{ip}"
-            ),
-            headers={
-                "x-apikey": self.client.api_key,
-            },
-        )
-
-        data = response["data"]
-        attributes = data["attributes"]
+        attributes = data.get("attributes", {})
 
         stats = attributes.get(
             "last_analysis_stats",
@@ -73,21 +59,22 @@ class VirusTotalProvider(ThreatProvider):
         else:
             severity = "LOW"
 
+        reputation = attributes.get(
+            "reputation",
+            0,
+        )
+
+        reputation = max(
+            0,
+            min(reputation, 100),
+        )
+
         return ThreatIndicator(
             value=data["id"],
-            type="IP",
+            type=indicator_type,
             source=self.provider_name,
             severity=severity,
-            reputation=max(
-                0,
-                min(
-                    attributes.get(
-                        "reputation",
-                        0,
-                    ),
-                    100,
-                ),
-            ),
+            reputation=reputation,
             malicious=malicious,
             suspicious=suspicious,
             harmless=stats.get(
@@ -100,14 +87,142 @@ class VirusTotalProvider(ThreatProvider):
             ),
         )
 
+    async def get_ip_report(
+        self,
+        ip: str,
+    ) -> ThreatIndicator:
+        """
+        Retrieve and normalize a VirusTotal
+        IP reputation report.
+        """
+
+        response = await self.client.get(
+            url=(
+                f"{self.BASE_URL}"
+                f"/ip_addresses/{ip}"
+            ),
+            headers={
+                "x-apikey": self.client.api_key,
+            },
+        )
+
+        return self._normalize_report(
+            response["data"],
+            "IP",
+        )
+
+    async def get_domain_report(
+        self,
+        domain: str,
+    ) -> ThreatIndicator:
+        """
+        Retrieve and normalize a VirusTotal
+        domain reputation report.
+        """
+
+        response = await self.client.get(
+            url=(
+                f"{self.BASE_URL}"
+                f"/domains/{domain}"
+            ),
+            headers={
+                "x-apikey": self.client.api_key,
+            },
+        )
+
+        return self._normalize_report(
+            response["data"],
+            "DOMAIN",
+        )
+
+    async def get_url_report(
+        self,
+        url_id: str,
+    ) -> ThreatIndicator:
+        """
+        Retrieve and normalize a VirusTotal
+        URL report.
+
+        VirusTotal URL objects use their URL
+        identifier rather than the raw URL in
+        the API path.
+        """
+
+        response = await self.client.get(
+            url=(
+                f"{self.BASE_URL}"
+                f"/urls/{url_id}"
+            ),
+            headers={
+                "x-apikey": self.client.api_key,
+            },
+        )
+
+        return self._normalize_report(
+            response["data"],
+            "URL",
+        )
+
+    async def get_hash_report(
+        self,
+        file_hash: str,
+    ) -> ThreatIndicator:
+        """
+        Retrieve and normalize a VirusTotal
+        file hash report.
+        """
+
+        response = await self.client.get(
+            url=(
+                f"{self.BASE_URL}"
+                f"/files/{file_hash}"
+            ),
+            headers={
+                "x-apikey": self.client.api_key,
+            },
+        )
+
+        return self._normalize_report(
+            response["data"],
+            "HASH",
+        )
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ) -> ThreatIndicator:
+        """
+        Generic IOC lookup interface.
+        """
+
+        normalized_type = indicator_type.strip().upper()
+
+        if normalized_type == "IP":
+            return await self.get_ip_report(value)
+
+        if normalized_type == "DOMAIN":
+            return await self.get_domain_report(value)
+
+        if normalized_type == "URL":
+            return await self.get_url_report(value)
+
+        if normalized_type == "HASH":
+            return await self.get_hash_report(value)
+
+        raise ValueError(
+            f"Unsupported indicator type: "
+            f"{indicator_type}"
+        )
+
     async def collect_indicators(
         self,
     ) -> list[ThreatIndicator]:
         """
         Bulk feed collection placeholder.
 
-        Individual IOC lookup is currently
-        supported through get_ip_report().
+        VirusTotal currently performs IOC
+        enrichment through explicit lookups.
         """
 
         return []
