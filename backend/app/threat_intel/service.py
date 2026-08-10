@@ -10,6 +10,9 @@ from app.services.alert_service import (
     get_alert_by_title,
 )
 from app.threat_intel.enrichment import enrich_indicator
+from app.threat_intel.enrichment_service import (
+    enrich_with_providers,
+)
 from app.threat_intel.models import Indicator
 from app.threat_intel.providers.factory import get_providers
 from app.threat_intel.providers.manager import ThreatProviderManager
@@ -44,6 +47,9 @@ def generate_alert_for_indicator(
     """
     Automatically generate alerts for
     HIGH and CRITICAL indicators.
+
+    The alert source always reflects the
+    original indicator source.
     """
 
     if indicator.severity not in {
@@ -99,8 +105,17 @@ async def ingest_threat_intelligence(
     db: Session,
 ) -> int:
     """
-    Collect, enrich and persist indicators
-    from registered threat intelligence providers.
+    Collect, provider-enrich, locally enrich,
+    and persist indicators from registered
+    threat intelligence providers.
+
+    The original collection source is preserved
+    even when an external provider enriches the
+    indicator.
+
+    External provider enrichment is used for
+    intelligence and scoring, but does not replace
+    the original indicator source.
     """
 
     added = 0
@@ -111,7 +126,6 @@ async def ingest_threat_intelligence(
 
     try:
         for item in indicators:
-
             value = item.value.strip()
 
             if indicator_exists(
@@ -120,18 +134,49 @@ async def ingest_threat_intelligence(
             ):
                 continue
 
+            # Preserve the original source before
+            # external provider enrichment.
+            original_source = (
+                item.source.strip()
+            )
+
+            providers = getattr(
+                provider_manager,
+                "providers",
+                [],
+            )
+
+            provider_enriched = (
+                await enrich_with_providers(
+                    item,
+                    providers,
+                )
+            )
+
             enriched = enrich_indicator(
-                item
+                provider_enriched
             )
 
             db_indicator = Indicator(
-                indicator_type=item.type.upper(),
+                indicator_type=(
+                    provider_enriched.type.upper()
+                ),
                 value=value,
-                severity=item.severity.upper(),
+                severity=(
+                    provider_enriched.severity.upper()
+                ),
                 threat_score=enriched.threat_score,
-                reputation_score=enriched.reputation_score,
-                confidence_score=enriched.confidence_score,
-                source=item.source.strip(),
+                reputation_score=(
+                    enriched.reputation_score
+                ),
+                confidence_score=(
+                    enriched.confidence_score
+                ),
+
+                # IMPORTANT:
+                # Preserve the original feed source.
+                source=original_source,
+
                 description=None,
                 tags=",".join(
                     enriched.tags
@@ -168,7 +213,9 @@ def create_indicator(
     indicator: IndicatorCreate,
 ) -> Indicator:
     """
-    Create, enrich and persist an indicator.
+    Create, locally enrich and persist an indicator.
+
+    Manual indicator creation remains synchronous.
     """
 
     normalized_value = (
@@ -208,8 +255,12 @@ def create_indicator(
         value=normalized_value,
         severity=indicator.severity.value,
         threat_score=enriched.threat_score,
-        reputation_score=enriched.reputation_score,
-        confidence_score=enriched.confidence_score,
+        reputation_score=(
+            enriched.reputation_score
+        ),
+        confidence_score=(
+            enriched.confidence_score
+        ),
         source=indicator.source.strip(),
         description=indicator.description,
         tags=",".join(
