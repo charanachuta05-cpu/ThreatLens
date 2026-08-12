@@ -2,6 +2,7 @@ import asyncio
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -39,6 +40,22 @@ import app.core.events as events
 
 app = FastAPI(
     title=settings.APP_NAME,
+)
+
+
+# -------------------------------------------------
+# CORS Configuration
+# -------------------------------------------------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
