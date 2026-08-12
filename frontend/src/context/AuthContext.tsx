@@ -18,9 +18,9 @@ interface AuthContextType {
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
-);
+const AuthContext = createContext<
+  AuthContextType | undefined
+>(undefined);
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -32,14 +32,43 @@ const TOKEN_TYPE_KEY = "token_type";
 export function AuthProvider({
   children,
 }: AuthProviderProps) {
-  const [authenticated, setAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] =
+    useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+    const token = localStorage.getItem(
+      ACCESS_TOKEN_KEY
+    );
 
     setAuthenticated(Boolean(token));
     setLoading(false);
+
+    function handleUnauthorized() {
+      localStorage.removeItem(
+        ACCESS_TOKEN_KEY
+      );
+
+      localStorage.removeItem(
+        TOKEN_TYPE_KEY
+      );
+
+      setAuthenticated(false);
+    }
+
+    window.addEventListener(
+      "auth:unauthorized",
+      handleUnauthorized
+    );
+
+    return () => {
+      window.removeEventListener(
+        "auth:unauthorized",
+        handleUnauthorized
+      );
+    };
   }, []);
 
   async function login(
@@ -48,7 +77,9 @@ export function AuthProvider({
     const data = await loginUser(credentials);
 
     if (!data.access_token) {
-      throw new Error("Login succeeded but no access token was returned.");
+      throw new Error(
+        "Login succeeded but no access token was returned."
+      );
     }
 
     localStorage.setItem(
@@ -65,8 +96,13 @@ export function AuthProvider({
   }
 
   function logout(): void {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(TOKEN_TYPE_KEY);
+    localStorage.removeItem(
+      ACCESS_TOKEN_KEY
+    );
+
+    localStorage.removeItem(
+      TOKEN_TYPE_KEY
+    );
 
     setAuthenticated(false);
   }
