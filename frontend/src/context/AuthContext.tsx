@@ -1,6 +1,4 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
   type ReactNode,
@@ -11,16 +9,10 @@ import {
   type LoginRequest,
 } from "../api/auth";
 
-interface AuthContextType {
-  authenticated: boolean;
-  loading: boolean;
-  login: (credentials: LoginRequest) => Promise<void>;
-  logout: () => void;
-}
-
-const AuthContext = createContext<
-  AuthContextType | undefined
->(undefined);
+import {
+  AuthContext,
+  type AuthContextType,
+} from "./AuthContextDefinition";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -33,26 +25,28 @@ export function AuthProvider({
   children,
 }: AuthProviderProps) {
   const [authenticated, setAuthenticated] =
-    useState(false);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  useEffect(() => {
-    const token = localStorage.getItem(
-      ACCESS_TOKEN_KEY
+    useState<boolean>(() =>
+      Boolean(
+        localStorage.getItem(
+          ACCESS_TOKEN_KEY,
+        ),
+      ),
     );
 
-    setAuthenticated(Boolean(token));
-    setLoading(false);
+  const [loading, setLoading] =
+    useState<boolean>(false);
 
+  /*
+   * Listen for unauthorized API responses.
+   */
+  useEffect(() => {
     function handleUnauthorized() {
       localStorage.removeItem(
-        ACCESS_TOKEN_KEY
+        ACCESS_TOKEN_KEY,
       );
 
       localStorage.removeItem(
-        TOKEN_TYPE_KEY
+        TOKEN_TYPE_KEY,
       );
 
       setAuthenticated(false);
@@ -60,75 +54,76 @@ export function AuthProvider({
 
     window.addEventListener(
       "auth:unauthorized",
-      handleUnauthorized
+      handleUnauthorized,
     );
 
     return () => {
       window.removeEventListener(
         "auth:unauthorized",
-        handleUnauthorized
+        handleUnauthorized,
       );
     };
   }, []);
 
+  /*
+   * Login
+   */
   async function login(
-    credentials: LoginRequest
+    credentials: LoginRequest,
   ): Promise<void> {
-    const data = await loginUser(credentials);
+    setLoading(true);
 
-    if (!data.access_token) {
-      throw new Error(
-        "Login succeeded but no access token was returned."
+    try {
+      const data =
+        await loginUser(credentials);
+
+      if (!data.access_token) {
+        throw new Error(
+          "Login succeeded but no access token was returned.",
+        );
+      }
+
+      localStorage.setItem(
+        ACCESS_TOKEN_KEY,
+        data.access_token,
       );
+
+      localStorage.setItem(
+        TOKEN_TYPE_KEY,
+        data.token_type || "bearer",
+      );
+
+      setAuthenticated(true);
+    } finally {
+      setLoading(false);
     }
-
-    localStorage.setItem(
-      ACCESS_TOKEN_KEY,
-      data.access_token
-    );
-
-    localStorage.setItem(
-      TOKEN_TYPE_KEY,
-      data.token_type || "bearer"
-    );
-
-    setAuthenticated(true);
   }
 
+  /*
+   * Logout
+   */
   function logout(): void {
     localStorage.removeItem(
-      ACCESS_TOKEN_KEY
+      ACCESS_TOKEN_KEY,
     );
 
     localStorage.removeItem(
-      TOKEN_TYPE_KEY
+      TOKEN_TYPE_KEY,
     );
 
     setAuthenticated(false);
   }
 
+  const value: AuthContextType = {
+    authenticated,
+    loading,
+    login,
+    logout,
+  };
+
   return (
-    <AuthContext.Provider
-      value={{
-        authenticated,
-        loading,
-        login,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextType {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider"
-    );
-  }
-
-  return context;
 }

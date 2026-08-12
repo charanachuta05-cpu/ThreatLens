@@ -11,7 +11,7 @@ import Indicators from "./pages/Indicators";
 import Investigations from "./pages/Investigations";
 import DashboardLayout from "./layouts/DashboardLayout";
 
-import { useAuth } from "./context/AuthContext";
+import { useAuth } from "./context/useAuth";
 
 function App() {
   const {

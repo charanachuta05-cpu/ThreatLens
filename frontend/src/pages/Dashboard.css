@@ -118,3 +118,16 @@
     flex-wrap: wrap;
   }
 }
+
+.dashboard-state {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.dashboard-error {
+  color: #fca5a5;
+}

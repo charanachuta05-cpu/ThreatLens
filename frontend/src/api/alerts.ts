@@ -16,6 +16,10 @@ export interface Alert {
 export interface AlertQuery {
   skip?: number;
   limit?: number;
+  search?: string;
+  severity?: string;
+  status?: string;
+  source?: string;
 }
 
 export async function getAlerts(

@@ -1,21 +1,32 @@
-import { useState, type FormEvent } from "react";
+import { isAxiosError } from "axios";
+import {
+  useState,
+  type FormEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 
 import "./Login.css";
 
 function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, loading } = useAuth();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [submitting, setSubmitting] =
+    useState(false);
 
   async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
@@ -24,28 +35,50 @@ function Login() {
 
     try {
       await login({
-        email,
+        email: email.trim(),
         password,
       });
 
       navigate("/dashboard", {
         replace: true,
       });
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.detail ||
-        "Login failed. Please check your credentials.";
+    } catch (err: unknown) {
+      if (
+        isAxiosError<{
+          detail?: string;
+        }>(err)
+      ) {
+        const detail =
+          err.response?.data?.detail;
 
-      setError(message);
+        if (typeof detail === "string") {
+          setError(detail);
+        } else {
+          setError(
+            "Login failed. Please check your credentials.",
+          );
+        }
+      } else if (
+        err instanceof Error
+      ) {
+        setError(err.message);
+      } else {
+        setError(
+          "Login failed. Please check your credentials.",
+        );
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
+  const isSubmitting =
+    submitting || loading;
+
   return (
-    <main className="login-page">
-      <section className="login-card">
-        <div className="login-header">
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-brand">
           <h1>ThreatLens</h1>
 
           <p>
@@ -69,11 +102,14 @@ function Login() {
               type="email"
               value={email}
               onChange={(event) =>
-                setEmail(event.target.value)
+                setEmail(
+                  event.target.value,
+                )
               }
               placeholder="Enter your email"
               autoComplete="email"
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -87,11 +123,14 @@ function Login() {
               type="password"
               value={password}
               onChange={(event) =>
-                setPassword(event.target.value)
+                setPassword(
+                  event.target.value,
+                )
               }
               placeholder="Enter your password"
               autoComplete="current-password"
               required
+              disabled={isSubmitting}
             />
           </div>
 
@@ -106,15 +145,16 @@ function Login() {
 
           <button
             type="submit"
-            disabled={submitting}
+            className="login-button"
+            disabled={isSubmitting}
           >
-            {submitting
+            {isSubmitting
               ? "Signing in..."
-              : "Sign in"}
+              : "Sign In"}
           </button>
         </form>
-      </section>
-    </main>
+      </div>
+    </div>
   );
 }
 

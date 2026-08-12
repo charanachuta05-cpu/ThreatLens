@@ -1,4 +1,8 @@
-import { NavLink, Outlet } from "react-router-dom";
+import {
+  NavLink,
+  Outlet,
+} from "react-router-dom";
+
 import {
   LayoutDashboard,
   ShieldAlert,
@@ -6,11 +10,15 @@ import {
   Bell,
   Settings,
   LogOut,
-  Activity,
 } from "lucide-react";
+
+import { useAuth } from "../context/useAuth";
+
 import "./DashboardLayout.css";
 
 function DashboardLayout() {
+  const { logout } = useAuth();
+
   const navigation = [
     {
       name: "Dashboard",
@@ -36,75 +44,147 @@ function DashboardLayout() {
 
   return (
     <div className="dashboard-layout">
+
+      {/* ==========================================
+          Sidebar
+      ========================================== */}
+
       <aside className="sidebar">
-        <div className="sidebar-header">
-          <div className="brand-icon">
-            <Activity size={22} />
-          </div>
+
+        {/* Brand */}
+
+        <div className="sidebar-brand">
 
           <div>
-            <h1>ThreatLens</h1>
-            <span>Security Intelligence</span>
+            <h1>
+              ThreatLens
+            </h1>
+
+            <span>
+              Security Intelligence
+            </span>
           </div>
+
         </div>
+
+        {/* Navigation */}
 
         <nav className="sidebar-nav">
-          <p className="nav-label">MONITORING</p>
 
-          {navigation.map((item) => {
-            const Icon = item.icon;
+          <p className="nav-label">
+            MONITORING
+          </p>
 
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  `nav-item ${isActive ? "active" : ""}`
-                }
-              >
-                <Icon size={19} />
-                <span>{item.name}</span>
-              </NavLink>
-            );
-          })}
+          {navigation.map(
+            (item) => {
+              const Icon =
+                item.icon;
+
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className={({
+                    isActive,
+                  }) =>
+                    `nav-item ${
+                      isActive
+                        ? "active"
+                        : ""
+                    }`
+                  }
+                >
+                  <Icon size={19} />
+
+                  <span>
+                    {item.name}
+                  </span>
+                </NavLink>
+              );
+            }
+          )}
+
         </nav>
 
+        {/* Bottom Controls */}
+
         <div className="sidebar-bottom">
-          <NavLink to="/settings" className="nav-item">
+
+          <NavLink
+            to="/settings"
+            className="nav-item"
+          >
             <Settings size={19} />
-            <span>Settings</span>
+
+            <span>
+              Settings
+            </span>
           </NavLink>
 
-          <button className="logout-button">
+          <button
+            type="button"
+            className="logout-button"
+            onClick={logout}
+          >
             <LogOut size={19} />
-            <span>Logout</span>
+
+            <span>
+              Logout
+            </span>
           </button>
+
         </div>
+
       </aside>
 
+      {/* ==========================================
+          Main Content
+      ========================================== */}
+
       <main className="main-content">
+
+        {/* Top Bar */}
+
         <header className="topbar">
+
           <div>
             <span className="system-status">
-              <span className="status-dot"></span>
+
+              <span className="status-dot" />
+
               Threat Intelligence Engine Online
+
             </span>
           </div>
 
           <div className="topbar-user">
-            <div className="user-avatar">A</div>
+
+            <div className="user-avatar">
+              A
+            </div>
 
             <div>
-              <strong>Analyst</strong>
-              <span>Security Operations</span>
+              <strong>
+                Analyst
+              </strong>
+
+              <span>
+                Security Operations
+              </span>
             </div>
+
           </div>
+
         </header>
+
+        {/* Page */}
 
         <section className="page-content">
           <Outlet />
         </section>
+
       </main>
+
     </div>
   );
 }

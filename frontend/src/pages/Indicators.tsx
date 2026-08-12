@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import {
   Activity,
@@ -16,17 +19,25 @@ import {
 import "./Indicators.css";
 
 function Indicators() {
-  const [indicators, setIndicators] = useState<Indicator[]>(
-    [],
-  );
+  const [indicators, setIndicators] =
+    useState<Indicator[]>([]);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [search, setSearch] = useState("");
-  const [severity, setSeverity] = useState("");
+  const [error, setError] =
+    useState("");
 
-  async function loadIndicators() {
+  const [search, setSearch] =
+    useState("");
+
+  const [severity, setSeverity] =
+    useState("");
+
+  async function loadIndicators(
+    searchValue = search,
+    severityValue = severity,
+  ) {
     try {
       setLoading(true);
       setError("");
@@ -34,8 +45,10 @@ function Indicators() {
       const data = await getIndicators({
         skip: 0,
         limit: 50,
-        search: search.trim() || undefined,
-        severity: severity || undefined,
+        search:
+          searchValue.trim() || undefined,
+        severity:
+          severityValue || undefined,
       });
 
       setIndicators(data);
@@ -54,21 +67,68 @@ function Indicators() {
   }
 
   useEffect(() => {
-    loadIndicators();
+    let cancelled = false;
+
+    async function fetchIndicators() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const data = await getIndicators({
+          skip: 0,
+          limit: 50,
+          search:
+            search.trim() || undefined,
+          severity:
+            severity || undefined,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        setIndicators(data);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        console.error(
+          "Failed to load indicators:",
+          err,
+        );
+
+        setError(
+          "Unable to load threat indicators.",
+        );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void fetchIndicators();
+
+    return () => {
+      cancelled = true;
+    };
   }, [search, severity]);
 
-  const highRiskCount = indicators.filter(
-    (indicator) =>
-      indicator.severity === "HIGH" ||
-      indicator.severity === "CRITICAL",
-  ).length;
+  const highRiskCount =
+    indicators.filter(
+      (indicator) =>
+        indicator.severity === "HIGH" ||
+        indicator.severity === "CRITICAL",
+    ).length;
 
   const averageThreatScore =
     indicators.length > 0
       ? Math.round(
           indicators.reduce(
             (total, indicator) =>
-              total + indicator.threat_score,
+              total +
+              indicator.threat_score,
             0,
           ) / indicators.length,
         )
@@ -81,15 +141,18 @@ function Indicators() {
           <h2>Threat Indicators</h2>
 
           <p>
-            Monitor and analyze indicators of
-            compromise detected by ThreatLens.
+            Monitor and analyze indicators
+            of compromise detected by
+            ThreatLens.
           </p>
         </div>
 
         <button
           type="button"
           className="refresh-button"
-          onClick={loadIndicators}
+          onClick={() =>
+            void loadIndicators()
+          }
           disabled={loading}
         >
           <RefreshCw
@@ -110,7 +173,9 @@ function Indicators() {
           <ShieldAlert size={20} />
 
           <div>
-            <span>Total Indicators</span>
+            <span>
+              Total Indicators
+            </span>
 
             <strong>
               {indicators.length}
@@ -134,7 +199,9 @@ function Indicators() {
           <Activity size={20} />
 
           <div>
-            <span>Average Threat Score</span>
+            <span>
+              Average Threat Score
+            </span>
 
             <strong>
               {averageThreatScore}
@@ -143,29 +210,33 @@ function Indicators() {
         </div>
       </div>
 
-      <div className="indicator-card">
-        <div className="indicator-toolbar">
-          <div className="search-box">
+      <div className="indicators-card">
+        <div className="indicator-filters">
+          <div className="search-field">
             <Search size={16} />
 
             <input
-              type="search"
-              placeholder="Search indicator..."
+              type="text"
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value,
+                )
               }
+              placeholder="Search indicators..."
               aria-label="Search indicators"
             />
           </div>
 
-          <div className="filter-box">
-            <Filter size={15} />
+          <div className="severity-field">
+            <Filter size={16} />
 
             <select
               value={severity}
               onChange={(event) =>
-                setSeverity(event.target.value)
+                setSeverity(
+                  event.target.value,
+                )
               }
               aria-label="Filter by severity"
             >
@@ -193,18 +264,20 @@ function Indicators() {
         </div>
 
         {loading && (
-          <div className="indicator-state">
-            Loading indicators...
+          <div className="indicators-state">
+            Loading threat indicators...
           </div>
         )}
 
         {!loading && error && (
-          <div className="indicator-state error">
+          <div className="indicators-state error">
             {error}
 
             <button
               type="button"
-              onClick={loadIndicators}
+              onClick={() =>
+                void loadIndicators()
+              }
               className="retry-button"
             >
               Try Again
@@ -215,8 +288,8 @@ function Indicators() {
         {!loading &&
           !error &&
           indicators.length === 0 && (
-            <div className="indicator-state">
-              No indicators found.
+            <div className="indicators-state">
+              No threat indicators found.
             </div>
           )}
 
@@ -230,39 +303,27 @@ function Indicators() {
                     <th>Type</th>
                     <th>Indicator</th>
                     <th>Severity</th>
-                    <th>Threat</th>
+                    <th>Threat Score</th>
                     <th>Reputation</th>
-                    <th>Confidence</th>
-                    <th>Tags</th>
+                    <th>Source</th>
+                    <th>Created</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {indicators.map(
                     (indicator) => (
-                      <tr key={indicator.id}>
+                      <tr
+                        key={indicator.id}
+                      >
                         <td>
-                          <span className="type-badge">
-                            {
-                              indicator.indicator_type
-                            }
-                          </span>
+                          {indicator.indicator_type}
                         </td>
 
                         <td>
-                          <div className="indicator-value-cell">
-                            <strong
-                              title={
-                                indicator.value
-                              }
-                            >
-                              {indicator.value}
-                            </strong>
-
-                            <span>
-                              {indicator.source}
-                            </span>
-                          </div>
+                          <strong>
+                            {indicator.value}
+                          </strong>
                         </td>
 
                         <td>
@@ -276,49 +337,24 @@ function Indicators() {
                         </td>
 
                         <td>
-                          <span className="score">
-                            {
-                              indicator.threat_score
-                            }
-                          </span>
+                          {indicator.threat_score}
                         </td>
 
                         <td>
-                          <span className="score">
-                            {
-                              indicator.reputation_score
-                            }
-                          </span>
+                          {
+                            indicator.reputation_score
+                          }
                         </td>
 
                         <td>
-                          <span className="score">
-                            {
-                              indicator.confidence_score
-                            }
-                          </span>
+                          {indicator.source ||
+                            "Unknown"}
                         </td>
 
                         <td>
-                          <div className="tag-list">
-                            {indicator.tags.length >
-                            0 ? (
-                              indicator.tags.map(
-                                (tag) => (
-                                  <span
-                                    className="tag"
-                                    key={tag}
-                                  >
-                                    {tag}
-                                  </span>
-                                ),
-                              )
-                            ) : (
-                              <span className="no-tags">
-                                —
-                              </span>
-                            )}
-                          </div>
+                          {new Date(
+                            indicator.created_at,
+                          ).toLocaleString()}
                         </td>
                       </tr>
                     ),
