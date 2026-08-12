@@ -1,17 +1,19 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.alert import Alert
-from app.threat_intel.models import Indicator
-
 from app.dashboard.schemas import DashboardSummary
+from app.models.alert import Alert, AlertStatus
+from app.threat_intel.models import Indicator
 
 
 def get_dashboard_summary(
     db: Session,
 ) -> DashboardSummary:
 
-    total = db.query(Indicator).count()
+    total = (
+        db.query(Indicator)
+        .count()
+    )
 
     critical = (
         db.query(Indicator)
@@ -29,7 +31,18 @@ def get_dashboard_summary(
         .count()
     )
 
-    alerts = db.query(Alert).count()
+    active_alerts = (
+        db.query(Alert)
+        .filter(
+            Alert.status.in_(
+                [
+                    AlertStatus.OPEN,
+                    AlertStatus.IN_PROGRESS,
+                ]
+            )
+        )
+        .count()
+    )
 
     average = (
         db.query(
@@ -45,9 +58,9 @@ def get_dashboard_summary(
         total_indicators=total,
         critical_indicators=critical,
         high_indicators=high,
-        active_alerts=alerts,
+        active_alerts=active_alerts,
         average_threat_score=round(
-            average,
+            float(average),
             2,
         ),
     )
