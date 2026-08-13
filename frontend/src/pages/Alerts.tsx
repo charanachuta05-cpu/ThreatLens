@@ -449,9 +449,6 @@ function Alerts() {
               Resolved
             </option>
 
-            <option value="CLOSED">
-              Closed
-            </option>
           </select>
 
           <div className="filter-input">
