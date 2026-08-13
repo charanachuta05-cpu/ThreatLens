@@ -163,3 +163,147 @@ def test_viewer_cannot_delete_alert(client, admin_headers):
     )
 
     assert response.status_code == 403
+
+# -------------------------------------------------
+# Invalid Assigned User
+# -------------------------------------------------
+
+def test_invalid_assigned_user_rejected(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "assigned_to": 999999,
+        },
+    )
+
+    assert response.status_code == 404
+
+    data = response.json()
+
+    assert data["success"] is False
+    assert (
+        data["error"]["message"]
+        == "Assigned user not found or inactive"
+    )
+
+
+# -------------------------------------------------
+# Zero Assigned User
+# -------------------------------------------------
+
+def test_zero_assigned_user_rejected(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "assigned_to": 0,
+        },
+    )
+
+    assert response.status_code == 422
+
+# -------------------------------------------------
+# Valid Assigned User
+# -------------------------------------------------
+
+def test_admin_can_assign_alert(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "assigned_to": 1,
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["id"] == alert_id
+    assert data["assigned_to"] == 1
+
+# -------------------------------------------------
+# Clear Alert Assignment
+# -------------------------------------------------
+
+def test_admin_can_clear_alert_assignment(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    assign_response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "assigned_to": 1,
+        },
+    )
+
+    assert assign_response.status_code == 200
+
+    clear_response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "assigned_to": None,
+        },
+    )
+
+    assert clear_response.status_code == 200
+
+    data = clear_response.json()
+
+    assert data["id"] == alert_id
+    assert data["assigned_to"] is None
+
+# -------------------------------------------------
+# Invalid Alert Status
+# -------------------------------------------------
+
+def test_invalid_alert_status_rejected(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "status": "ACKNOWLEDGED",
+        },
+    )
+
+    assert response.status_code == 422

@@ -210,8 +210,8 @@ def get_alert(
     response_model=AlertResponse,
     summary="Update Existing Alert",
     description=(
-        "Update an alert and broadcast the event "
-        "to administrators and analysts."
+        "Partially update an alert and broadcast the "
+        "updated event to administrators and analysts."
     ),
 )
 async def update_existing_alert(

@@ -36,6 +36,13 @@ class AlertCreate(BaseModel):
 
 
 class AlertUpdate(BaseModel):
+    """
+    Partial update model for alerts.
+
+    Only fields explicitly supplied by the client
+    are modified.
+    """
+
     title: str | None = Field(
         default=None,
         min_length=3,
@@ -57,7 +64,10 @@ class AlertUpdate(BaseModel):
         max_length=100,
     )
 
-    assigned_to: int | None = None
+    assigned_to: int | None = Field(
+        default=None,
+        ge=1,
+    )
 
 
 class AlertResponse(BaseModel):
@@ -82,5 +92,5 @@ class AlertResponse(BaseModel):
     updated_at: datetime | None
 
     model_config = ConfigDict(
-        from_attributes=True
+        from_attributes=True,
     )

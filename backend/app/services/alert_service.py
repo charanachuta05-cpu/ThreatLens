@@ -1,3 +1,7 @@
+from fastapi import HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.models.user import User
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -146,18 +150,63 @@ def update_alert(
     alert_data: AlertUpdate,
 ) -> Alert:
     """
-    Update an existing alert.
+    Safely update an existing alert.
+
+    Only explicitly supplied fields are modified.
+
+    assigned_to is validated before the alert is changed.
+    The assigned user must exist and be active.
+
+    Database failures are rolled back so the SQLAlchemy
+    session remains usable after an exception.
     """
 
     update_data = alert_data.model_dump(
-        exclude_unset=True
+        exclude_unset=True,
     )
+
+    # --------------------------------------------------------
+    # Validate assigned user
+    # --------------------------------------------------------
+
+    if "assigned_to" in update_data:
+        assigned_to = update_data["assigned_to"]
+
+        # None explicitly clears the assignment.
+        if assigned_to is not None:
+            assigned_user = (
+                db.query(User)
+                .filter(
+                    User.id == assigned_to,
+                    User.is_active.is_(True),
+                )
+                .first()
+            )
+
+            if assigned_user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Assigned user not found or inactive",
+                )
+
+    # --------------------------------------------------------
+    # Apply validated changes
+    # --------------------------------------------------------
 
     for key, value in update_data.items():
         setattr(alert, key, value)
 
-    db.commit()
-    db.refresh(alert)
+    # --------------------------------------------------------
+    # Persist changes safely
+    # --------------------------------------------------------
+
+    try:
+        db.commit()
+        db.refresh(alert)
+
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
     return alert
 
