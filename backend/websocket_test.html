@@ -63,7 +63,9 @@
         // THREATLENS WEBSOCKET CONFIGURATION
         // ==========================================
 
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkB0aHJlYXRsZW5zLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc4NjIwMzEzNn0._3gVTjzZmnlCOO7lvUvjgtJ0Ml7AWKlO1cM87lh8Tuc";
+    const token = window.prompt(
+        "Enter a fresh ThreatLens JWT token:"
+    );
 
         const statusDiv = document.getElementById("status");
         const messagesDiv = document.getElementById("messages");

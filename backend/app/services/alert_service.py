@@ -1,7 +1,13 @@
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
-from app.schemas.alert import AlertCreate, AlertUpdate
+from app.schemas.alert import (
+    AlertCreate,
+    AlertSeverity,
+    AlertStatus,
+    AlertUpdate,
+)
 
 
 def create_alert(
@@ -20,7 +26,7 @@ def create_alert(
         title=alert_data.title,
         description=alert_data.description,
         severity=alert_data.severity,
-        status="OPEN",
+        status=AlertStatus.OPEN,
         source=alert_data.source,
         created_by=created_by,
     )
@@ -51,13 +57,83 @@ def get_alerts(
     db: Session,
     skip: int = 0,
     limit: int = 20,
-):
+    severity: AlertSeverity | None = None,
+    status: AlertStatus | None = None,
+    source: str | None = None,
+    search: str | None = None,
+) -> list[Alert]:
     """
-    Retrieve alerts with pagination.
+    Retrieve alerts with pagination and optional filtering.
+
+    Supported filters:
+        - severity
+        - status
+        - source
+        - search
+
+    Results are ordered newest first.
     """
 
+    query = db.query(Alert)
+
+    # --------------------------------------------------------
+    # Severity filter
+    # --------------------------------------------------------
+
+    if severity is not None:
+        query = query.filter(
+            Alert.severity == severity
+        )
+
+    # --------------------------------------------------------
+    # Status filter
+    # --------------------------------------------------------
+
+    if status is not None:
+        query = query.filter(
+            Alert.status == status
+        )
+
+    # --------------------------------------------------------
+    # Source filter
+    # --------------------------------------------------------
+
+    if source:
+        query = query.filter(
+            Alert.source.ilike(f"%{source}%")
+        )
+
+    # --------------------------------------------------------
+    # Search filter
+    #
+    # Searches both title and description.
+    # --------------------------------------------------------
+
+    if search:
+        search_pattern = f"%{search}%"
+
+        query = query.filter(
+            or_(
+                Alert.title.ilike(search_pattern),
+                Alert.description.ilike(search_pattern),
+            )
+        )
+
+    # --------------------------------------------------------
+    # Deterministic ordering
+    # --------------------------------------------------------
+
+    query = query.order_by(
+        Alert.created_at.desc(),
+        Alert.id.desc(),
+    )
+
+    # --------------------------------------------------------
+    # Pagination
+    # --------------------------------------------------------
+
     return (
-        db.query(Alert)
+        query
         .offset(skip)
         .limit(limit)
         .all()
@@ -101,7 +177,7 @@ def delete_alert(
 def get_alert_by_title(
     db: Session,
     title: str,
-):
+) -> Alert | None:
     """
     Check whether an alert with the given title exists.
     """

@@ -16,6 +16,8 @@ from app.models.user import User
 from app.schemas.alert import (
     AlertCreate,
     AlertResponse,
+    AlertSeverity,
+    AlertStatus,
     AlertUpdate,
 )
 from app.services.alert_service import (
@@ -33,6 +35,10 @@ router = APIRouter(
     tags=["Alerts"],
 )
 
+
+# ============================================================
+# CREATE ALERT
+# ============================================================
 
 @router.post(
     "/",
@@ -70,6 +76,16 @@ async def create_new_alert(
                 "source": created_alert.source,
                 "created_by": created_alert.created_by,
                 "assigned_to": created_alert.assigned_to,
+                "created_at": (
+                    created_alert.created_at.isoformat()
+                    if created_alert.created_at
+                    else None
+                ),
+                "updated_at": (
+                    created_alert.updated_at.isoformat()
+                    if created_alert.updated_at
+                    else None
+                ),
             },
         },
     )
@@ -77,11 +93,18 @@ async def create_new_alert(
     return created_alert
 
 
+# ============================================================
+# LIST ALERTS
+# ============================================================
+
 @router.get(
     "/",
     response_model=list[AlertResponse],
-    summary="Get all alerts",
-    description="Returns a paginated list of alerts.",
+    summary="Get alerts",
+    description=(
+        "Returns a paginated list of alerts with optional "
+        "severity, status, source, and text search filters."
+    ),
 )
 def list_alerts(
     skip: int = Query(
@@ -95,19 +118,59 @@ def list_alerts(
         le=100,
         description="Maximum number of alerts to return.",
     ),
+    severity: AlertSeverity | None = Query(
+        default=None,
+        description="Filter by alert severity.",
+    ),
+    status_filter: AlertStatus | None = Query(
+        default=None,
+        alias="status",
+        description="Filter by alert status.",
+    ),
+    source: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=100,
+        description="Filter by alert source.",
+    ),
+    search: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description=(
+            "Search alert title and description."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Retrieve all alerts.
+    Retrieve alerts with pagination and filtering.
+
+    Supported filters:
+
+        ?severity=CRITICAL
+        ?status=OPEN
+        ?source=Pipeline-Test
+        ?search=PowerShell
+
+    Multiple filters can be combined.
     """
 
     return get_alerts(
         db=db,
         skip=skip,
         limit=limit,
+        severity=severity,
+        status=status_filter,
+        source=source,
+        search=search,
     )
 
+
+# ============================================================
+# GET ALERT BY ID
+# ============================================================
 
 @router.get(
     "/{alert_id}",
@@ -138,9 +201,18 @@ def get_alert(
     return alert
 
 
+# ============================================================
+# UPDATE ALERT
+# ============================================================
+
 @router.put(
     "/{alert_id}",
     response_model=AlertResponse,
+    summary="Update Existing Alert",
+    description=(
+        "Update an alert and broadcast the event "
+        "to administrators and analysts."
+    ),
 )
 async def update_existing_alert(
     alert_id: int,
@@ -151,8 +223,7 @@ async def update_existing_alert(
     ),
 ):
     """
-    Update an alert and broadcast the event
-    to administrators and analysts.
+    Update an alert and broadcast the updated event.
     """
 
     alert = get_alert_by_id(
@@ -185,6 +256,16 @@ async def update_existing_alert(
                 "source": updated_alert.source,
                 "created_by": updated_alert.created_by,
                 "assigned_to": updated_alert.assigned_to,
+                "created_at": (
+                    updated_alert.created_at.isoformat()
+                    if updated_alert.created_at
+                    else None
+                ),
+                "updated_at": (
+                    updated_alert.updated_at.isoformat()
+                    if updated_alert.updated_at
+                    else None
+                ),
             },
         },
     )
@@ -192,9 +273,18 @@ async def update_existing_alert(
     return updated_alert
 
 
+# ============================================================
+# DELETE ALERT
+# ============================================================
+
 @router.delete(
     "/{alert_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Alert",
+    description=(
+        "Delete an alert and broadcast the deletion "
+        "event to administrators."
+    ),
 )
 async def remove_alert(
     alert_id: int,
@@ -204,8 +294,7 @@ async def remove_alert(
     ),
 ):
     """
-    Delete an alert and broadcast the deletion event
-    to administrators.
+    Delete an alert and broadcast the deletion event.
     """
 
     alert = get_alert_by_id(
