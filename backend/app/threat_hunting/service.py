@@ -18,6 +18,7 @@ def hunt_high_risk(
         .order_by(
             Indicator.threat_score.desc(),
             Indicator.created_at.desc(),
+            Indicator.id.desc(),
         )
         .all()
     )
@@ -34,7 +35,8 @@ def hunt_recent(
     return (
         db.query(Indicator)
         .order_by(
-            Indicator.created_at.desc()
+            Indicator.created_at.desc(),
+            Indicator.id.desc(),
         )
         .limit(limit)
         .all()
@@ -49,12 +51,21 @@ def hunt_by_source(
     Hunt indicators by intelligence source.
     """
 
+    normalized_source = source.strip()
+
+    if not normalized_source:
+        return []
+
     return (
         db.query(Indicator)
         .filter(
             Indicator.source.ilike(
-                f"%{source}%"
+                f"%{normalized_source}%"
             )
+        )
+        .order_by(
+            Indicator.created_at.desc(),
+            Indicator.id.desc(),
         )
         .all()
     )
