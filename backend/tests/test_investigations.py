@@ -53,14 +53,18 @@ def delete_test_indicator():
         db.close()
 
 
-def test_investigation_returns_indicator(client):
+def test_investigation_returns_indicator(
+    client,
+    admin_headers,
+):
     delete_test_indicator()
 
     indicator_id = create_test_indicator()
 
     try:
         response = client.get(
-            f"/investigations/{indicator_id}"
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
         )
 
         assert response.status_code == 200
@@ -77,21 +81,24 @@ def test_investigation_returns_indicator(client):
         delete_test_indicator()
 
 
-def test_investigation_returns_persisted_scores(client):
+def test_investigation_returns_persisted_scores(
+    client,
+    admin_headers,
+):
     delete_test_indicator()
 
     indicator_id = create_test_indicator()
 
     try:
         response = client.get(
-            f"/investigations/{indicator_id}"
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
         )
 
         assert response.status_code == 200
 
         scores = response.json()["scores"]
 
-        # Verify exact persisted enrichment values.
         assert scores["threat_score"] == 85
         assert scores["reputation_score"] == 40
         assert scores["confidence_score"] == 67
@@ -100,30 +107,37 @@ def test_investigation_returns_persisted_scores(client):
         delete_test_indicator()
 
 
-def test_investigation_returns_persisted_tags(client):
+def test_investigation_returns_persisted_tags(
+    client,
+    admin_headers,
+):
     delete_test_indicator()
 
     indicator_id = create_test_indicator()
 
     try:
         response = client.get(
-            f"/investigations/{indicator_id}"
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
         )
 
         assert response.status_code == 200
 
         tags = response.json()["tags"]
 
-        # Verify the API exposes the exact database tags.
         assert tags == EXPECTED_TAGS
 
     finally:
         delete_test_indicator()
 
 
-def test_investigation_not_found(client):
+def test_investigation_not_found(
+    client,
+    admin_headers,
+):
     response = client.get(
-        "/investigations/999999"
+        "/investigations/999999",
+        headers=admin_headers,
     )
 
     assert response.status_code == 404

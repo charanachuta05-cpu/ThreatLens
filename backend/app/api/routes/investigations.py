@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import require_roles
 from app.core.database import SessionLocal
+from app.models.user import User
 
 from app.investigation.service import (
     investigate_indicator,
@@ -24,6 +26,9 @@ def get_db():
 @router.get("/{indicator_id}")
 def investigate(
     indicator_id: int,
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
     db: Session = Depends(get_db),
 ):
     try:
