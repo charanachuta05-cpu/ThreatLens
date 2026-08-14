@@ -15,6 +15,10 @@ def clean_indicator_test_data():
         "198.51.100.201",
         "198.51.100.202",
         "198.51.100.203",
+        "198.51.100.204",
+        "198.51.100.205",
+        "198.51.100.206",
+        "198.51.100.207",
     ]
 
     db = SessionLocal()
@@ -97,6 +101,310 @@ def test_create_indicator(client):
 
     assert "threat_score" in data
     assert "reputation_score" in data
+
+# -------------------------------------------------
+# Role-Based Access Control
+# -------------------------------------------------
+
+def make_role_headers(
+    user_id: int,
+    email: str,
+    role: str,
+):
+    """
+    Create a JWT containing the requested role.
+    """
+
+    token = create_access_token(
+        data={
+            "sub": str(user_id),
+            "email": email,
+            "role": role,
+        }
+    )
+
+    return {
+        "Authorization": f"Bearer {token}"
+    }
+
+
+def test_viewer_cannot_create_indicator(client):
+    """
+    Viewer users must not create indicators.
+    """
+
+    headers = make_role_headers(
+        user_id=3,
+        email="viewer@threatlens.com",
+        role="viewer",
+    )
+
+    response = client.post(
+        "/indicators/",
+        headers=headers,
+        json={
+            "indicator_type": "IP",
+            "value": "198.51.100.204",
+            "severity": "HIGH",
+            "source": "pytest",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_analyst_can_create_indicator(client):
+    """
+    Analyst users may create indicators.
+    """
+
+    headers = make_role_headers(
+        user_id=2,
+        email="analyst@threatlens.com",
+        role="analyst",
+    )
+
+    response = client.post(
+        "/indicators/",
+        headers=headers,
+        json={
+            "indicator_type": "IP",
+            "value": "198.51.100.205",
+            "severity": "HIGH",
+            "source": "pytest",
+        },
+    )
+
+    assert response.status_code in (200, 201)
+
+
+def test_viewer_can_read_indicators(client):
+    """
+    Viewer users may read indicators.
+    """
+
+    headers = make_role_headers(
+        user_id=3,
+        email="viewer@threatlens.com",
+        role="viewer",
+    )
+
+    response = client.get(
+        "/indicators/",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+
+def test_get_indicators_requires_auth(client):
+    """
+    Indicator retrieval requires authentication.
+    """
+
+    response = client.get(
+        "/indicators/",
+    )
+
+    assert response.status_code == 401
+
+# -------------------------------------------------
+# Query Validation
+# -------------------------------------------------
+
+def test_indicator_limit_lower_bound(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?limit=0",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_indicator_limit_upper_bound(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?limit=101",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_indicator_skip_lower_bound(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?skip=-1",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_indicator_min_score_lower_bound(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?min_score=-1",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_indicator_min_score_upper_bound(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?min_score=101",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_indicator_invalid_sort_field(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?sort_by=invalid",
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+
+
+def test_indicator_invalid_sort_order(client):
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?order=invalid",
+        headers=headers,
+    )
+
+    assert response.status_code == 400
+
+# -------------------------------------------------
+# Filtering
+# -------------------------------------------------
+
+def create_filter_test_indicators(client):
+    headers = make_admin_headers()
+
+    indicators = [
+        {
+            "indicator_type": "IP",
+            "value": "198.51.100.204",
+            "severity": "LOW",
+            "source": "filter-source-a",
+        },
+        {
+            "indicator_type": "IP",
+            "value": "198.51.100.205",
+            "severity": "HIGH",
+            "source": "filter-source-b",
+        },
+        {
+            "indicator_type": "IP",
+            "value": "198.51.100.206",
+            "severity": "CRITICAL",
+            "source": "filter-source-a",
+        },
+    ]
+
+    for payload in indicators:
+        response = client.post(
+            "/indicators/",
+            headers=headers,
+            json=payload,
+        )
+
+        assert response.status_code in (200, 201)
+
+
+def test_indicator_search_filter(client):
+    create_filter_test_indicators(client)
+
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?search=198.51.100.205",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert any(
+        item["value"] == "198.51.100.205"
+        for item in data
+    )
+
+
+def test_indicator_severity_filter(client):
+    create_filter_test_indicators(client)
+
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?severity=HIGH",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert all(
+        item["severity"] == "HIGH"
+        for item in data
+    )
+
+
+def test_indicator_source_filter(client):
+    create_filter_test_indicators(client)
+
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?source=filter-source-a",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert all(
+        "filter-source-a"
+        in item["source"]
+        for item in data
+    )
+
+
+def test_indicator_min_score_filter(client):
+    create_filter_test_indicators(client)
+
+    headers = make_admin_headers()
+
+    response = client.get(
+        "/indicators/?min_score=80",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert all(
+        item["threat_score"] >= 80
+        for item in data
+    )
 
 
 # -------------------------------------------------
