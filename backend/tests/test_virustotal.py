@@ -357,6 +357,185 @@ async def test_get_hash_report(monkeypatch):
     assert result.severity == "MEDIUM"
     assert result.malicious == 2
 
+@pytest.mark.asyncio
+async def test_get_url_report_normalizes_response(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "url-object-id",
+            "attributes": {
+                "last_analysis_stats": {
+                    "malicious": 3,
+                    "suspicious": 2,
+                    "harmless": 60,
+                },
+                "reputation": 65,
+                "tags": [
+                    "phishing",
+                    "malware",
+                ],
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    result = await provider.get_url_report(
+        "url-object-id"
+    )
+
+    assert result.value == "url-object-id"
+    assert result.type == "URL"
+    assert result.source == "VirusTotal"
+    assert result.severity == "MEDIUM"
+    assert result.reputation == 65
+    assert result.malicious == 3
+    assert result.suspicious == 2
+    assert result.harmless == 60
+    assert result.tags == [
+        "phishing",
+        "malware",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reputation_is_clamped_at_zero(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "12.12.12.12",
+            "attributes": {
+                "last_analysis_stats": {},
+                "reputation": -25,
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    result = await provider.get_ip_report(
+        "12.12.12.12"
+    )
+
+    assert result.reputation == 0
+
+
+@pytest.mark.asyncio
+async def test_tags_default_to_empty_list(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "13.13.13.13",
+            "attributes": {
+                "last_analysis_stats": {},
+                "reputation": 10,
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    result = await provider.get_ip_report(
+        "13.13.13.13"
+    )
+
+    assert result.tags == []
+
+
+@pytest.mark.asyncio
+async def test_generic_indicator_report_routes_to_url(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "url-object-id",
+            "attributes": {
+                "last_analysis_stats": {
+                    "malicious": 0,
+                    "suspicious": 1,
+                    "harmless": 70,
+                },
+                "reputation": 55,
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    result = await provider.get_indicator_report(
+        "url",
+        "url-object-id",
+    )
+
+    assert result.type == "URL"
+    assert result.value == "url-object-id"
+    assert result.severity == "MEDIUM"
+
+@pytest.mark.asyncio
+async def test_get_ip_report_builds_expected_request(
+    monkeypatch,
+):
+    provider = VirusTotalProvider(
+        "test-api-key"
+    )
+
+    captured = {}
+
+    async def mock_get(
+        url,
+        headers=None,
+        params=None,
+    ):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["params"] = params
+
+        return {
+            "data": {
+                "id": "8.8.8.8",
+                "attributes": {
+                    "last_analysis_stats": {},
+                    "reputation": 20,
+                },
+            }
+        }
+
+    monkeypatch.setattr(
+        provider.client,
+        "get",
+        mock_get,
+    )
+
+    await provider.get_ip_report(
+        "8.8.8.8"
+    )
+
+    assert captured["url"] == (
+        "https://www.virustotal.com/api/v3"
+        "/ip_addresses/8.8.8.8"
+    )
+
+    assert captured["headers"] == {
+        "x-apikey": "test-api-key"
+    }
+
+    assert captured["params"] is None
+
 
 @pytest.mark.asyncio
 async def test_generic_indicator_report_routes_to_ip(
