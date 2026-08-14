@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -38,8 +39,56 @@ from app.workers.scheduler import (
 import app.core.events as events
 
 
+# -------------------------------------------------
+# Application Lifecycle
+# -------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage application startup and shutdown lifecycle.
+    """
+
+    # Store the main FastAPI event loop.
+    # Background workers use this when WebSocket
+    # notifications are required.
+    events.websocket_loop = asyncio.get_running_loop()
+
+    print("✅ Main event loop stored")
+
+    # Do not run background workers during tests.
+    #
+    # This prevents the simulated threat-intelligence
+    # feed from modifying the database while pytest
+    # is executing.
+    if settings.APP_ENV.lower() == "test":
+        print("🧪 Test environment detected")
+        print("⏸️ Background scheduler disabled")
+    else:
+        start_scheduler()
+        print("✅ Background scheduler started")
+
+    try:
+        yield
+
+    finally:
+        # Stop background workers during normal
+        # application shutdown.
+        if settings.APP_ENV.lower() != "test":
+            stop_scheduler()
+            print("🛑 Background scheduler stopped")
+        else:
+            print("🧪 Test environment: scheduler shutdown skipped")
+
+        # Clear the stored event loop reference.
+        events.websocket_loop = None
+
+        print("🛑 Main event loop cleared")
+
+
 app = FastAPI(
     title=settings.APP_NAME,
+    lifespan=lifespan,
 )
 
 
@@ -106,55 +155,11 @@ app.include_router(dashboard.router)
 
 
 # -------------------------------------------------
-# Application Lifecycle
-# -------------------------------------------------
-
-@app.on_event("startup")
-async def startup_event():
-
-    # Store FastAPI main event loop.
-    # APScheduler workers use this when
-    # WebSocket notifications are required.
-    events.websocket_loop = asyncio.get_running_loop()
-
-    print("✅ Main event loop stored")
-
-    # Do not run background workers during tests.
-    #
-    # This prevents the simulated threat-intelligence
-    # feed from modifying the database while pytest
-    # is executing.
-    if settings.APP_ENV.lower() == "test":
-        print("🧪 Test environment detected")
-        print("⏸️ Background scheduler disabled")
-        return
-
-    start_scheduler()
-
-    print("✅ Background scheduler started")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-
-    if settings.APP_ENV.lower() != "test":
-        stop_scheduler()
-        print("🛑 Background scheduler stopped")
-    else:
-        print("🧪 Test environment: scheduler shutdown skipped")
-
-    events.websocket_loop = None
-
-    print("🛑 Main event loop cleared")
-
-
-# -------------------------------------------------
 # Root Endpoint
 # -------------------------------------------------
 
 @app.get("/")
 def root():
-
     return {
         "application": settings.APP_NAME,
         "environment": settings.APP_ENV,
@@ -168,9 +173,7 @@ def root():
 
 @app.get("/health")
 def health():
-
     try:
-
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
@@ -179,10 +182,9 @@ def health():
             "database": "connected",
         }
 
-    except Exception as e:
-
+    except Exception as exc:
         return {
             "status": "unhealthy",
             "database": "disconnected",
-            "error": str(e),
+            "error": str(exc),
         }
