@@ -185,7 +185,8 @@ class IndicatorResponse(IndicatorCreate):
 class ThreatIndicator(BaseModel):
     """
     Common normalized format returned
-    by threat intelligence providers.
+    by threat intelligence providers and
+    consumed by the enrichment/correlation engines.
     """
 
     value: str
@@ -197,6 +198,12 @@ class ThreatIndicator(BaseModel):
     severity: str = "LOW"
 
     reputation: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+    confidence: int = Field(
         default=0,
         ge=0,
         le=100,

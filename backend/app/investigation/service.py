@@ -60,6 +60,10 @@ def _build_threat_indicator(
     """
     Convert a database Indicator into the normalized
     ThreatIndicator schema used by the correlation engine.
+
+    Persisted enrichment values are used so that
+    investigation results remain deterministic and
+    do not trigger provider calls.
     """
 
     return ThreatIndicator(
@@ -68,10 +72,13 @@ def _build_threat_indicator(
         source=indicator.source,
         severity=indicator.severity,
         reputation=indicator.reputation_score,
+        confidence=indicator.confidence_score,
         malicious=0,
         suspicious=0,
         harmless=0,
-        tags=_parse_tags(indicator.tags),
+        tags=_parse_tags(
+            indicator.tags,
+        ),
     )
 
 

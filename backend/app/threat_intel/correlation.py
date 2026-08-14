@@ -20,16 +20,17 @@ def correlate_indicators(
 ) -> CorrelationResult:
     """
     Compare two indicators and calculate a
-    correlation score from 0 to 100.
+    deterministic correlation score from 0 to 100.
 
     Scoring:
 
-        Same type       +20
-        Same severity   +20
-        Same source     +20
-        Similar         +20
-        reputation
-        Shared tags     +20
+        Same type              +20
+        Same severity          +20
+        Same intelligence
+        source                 +15
+        Similar reputation     +15
+        Similar confidence    +10
+        Shared tags            +20
 
     Indicators are considered related when
     the final score is at least 60.
@@ -51,7 +52,7 @@ def correlate_indicators(
         )
 
     if left.source == right.source:
-        score += 20
+        score += 15
         reasons.append(
             "Same intelligence source",
         )
@@ -61,9 +62,19 @@ def correlate_indicators(
     )
 
     if reputation_difference <= 20:
-        score += 20
+        score += 15
         reasons.append(
             "Similar reputation",
+        )
+
+    confidence_difference = abs(
+        left.confidence - right.confidence,
+    )
+
+    if confidence_difference <= 20:
+        score += 10
+        reasons.append(
+            "Similar confidence",
         )
 
     shared_tags = (
@@ -75,10 +86,15 @@ def correlate_indicators(
         score += 20
         reasons.append(
             "Shared tags: "
-            + ", ".join(sorted(shared_tags)),
+            + ", ".join(
+                sorted(shared_tags),
+            ),
         )
 
-    score = min(score, 100)
+    score = min(
+        score,
+        100,
+    )
 
     return CorrelationResult(
         score=score,

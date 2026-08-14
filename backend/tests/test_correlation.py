@@ -1,4 +1,6 @@
-from app.threat_intel.correlation import correlate_indicators
+from app.threat_intel.correlation import (
+    correlate_indicators,
+)
 from app.threat_intel.schemas import ThreatIndicator
 
 
@@ -8,6 +10,7 @@ def make_indicator(
     severity: str = "HIGH",
     source: str = "pytest",
     reputation: int = 50,
+    confidence: int = 70,
     tags: list[str] | None = None,
 ) -> ThreatIndicator:
     return ThreatIndicator(
@@ -16,6 +19,7 @@ def make_indicator(
         source=source,
         severity=severity,
         reputation=reputation,
+        confidence=confidence,
         tags=tags or [],
     )
 
@@ -26,6 +30,7 @@ def test_correlation_identifies_strong_relationship():
         severity="HIGH",
         source="pytest",
         reputation=50,
+        confidence=70,
         tags=["ip", "high"],
     )
 
@@ -34,6 +39,7 @@ def test_correlation_identifies_strong_relationship():
         severity="HIGH",
         source="pytest",
         reputation=60,
+        confidence=80,
         tags=["ip", "high"],
     )
 
@@ -49,6 +55,7 @@ def test_correlation_identifies_strong_relationship():
     assert "Same severity" in result.reasons
     assert "Same intelligence source" in result.reasons
     assert "Similar reputation" in result.reasons
+    assert "Similar confidence" in result.reasons
     assert "Shared tags: high, ip" in result.reasons
 
 
@@ -58,6 +65,7 @@ def test_correlation_identifies_unrelated_indicators():
         severity="HIGH",
         source="source-a",
         reputation=10,
+        confidence=10,
         tags=["ip"],
     )
 
@@ -66,6 +74,7 @@ def test_correlation_identifies_unrelated_indicators():
         severity="LOW",
         source="source-b",
         reputation=90,
+        confidence=90,
         tags=["domain"],
     )
 
@@ -85,6 +94,7 @@ def test_correlation_threshold_is_60():
         severity="HIGH",
         source="source-a",
         reputation=50,
+        confidence=10,
         tags=[],
     )
 
@@ -93,6 +103,7 @@ def test_correlation_threshold_is_60():
         severity="LOW",
         source="source-a",
         reputation=90,
+        confidence=90,
         tags=[],
     )
 
@@ -101,5 +112,70 @@ def test_correlation_threshold_is_60():
         right,
     )
 
-    assert result.score == 40
+    # Same type = 20
+    # Same source = 15
+    # Total = 35
+    assert result.score == 35
     assert result.related is False
+
+
+def test_correlation_includes_confidence():
+    left = make_indicator(
+        confidence=40,
+    )
+
+    right = make_indicator(
+        confidence=50,
+    )
+
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert "Similar confidence" in result.reasons
+
+
+def test_correlation_rejects_dissimilar_confidence():
+    left = make_indicator(
+        confidence=10,
+    )
+
+    right = make_indicator(
+        confidence=50,
+    )
+
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert "Similar confidence" not in result.reasons
+
+
+def test_correlation_shared_tags_are_deterministic():
+    left = make_indicator(
+        tags=[
+            "malicious",
+            "ip",
+            "high-risk",
+        ],
+    )
+
+    right = make_indicator(
+        tags=[
+            "high-risk",
+            "ip",
+            "external",
+        ],
+    )
+
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert (
+        "Shared tags: high-risk, ip"
+        in result.reasons
+    )
