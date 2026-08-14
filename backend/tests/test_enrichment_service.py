@@ -56,6 +56,105 @@ class EmptyProvider:
     ):
         return None
 
+class UnsafeProvider:
+    @property
+    def provider_name(self):
+        return "UnsafeProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value="malicious.example",
+            type="DOMAIN",
+            source="UnsafeProvider",
+            severity="LOW",
+            reputation=20,
+            malicious=1,
+            suspicious=1,
+            harmless=50,
+            tags=["provider-tag"],
+        )
+
+
+class CriticalDowngradeProvider:
+    @property
+    def provider_name(self):
+        return "CriticalDowngradeProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source=self.provider_name,
+            severity="LOW",
+            reputation=10,
+            tags=[],
+        )
+
+
+class DuplicateTagProvider:
+    @property
+    def provider_name(self):
+        return "DuplicateTagProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source=self.provider_name,
+            severity="HIGH",
+            tags=[
+                "high-risk",
+                "provider",
+                "original",
+            ],
+        )
+
+
+class EmptySourceProvider:
+    @property
+    def provider_name(self):
+        return "EmptySourceProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source="",
+            severity="HIGH",
+        )
+
+
+class InvalidResultProvider:
+    @property
+    def provider_name(self):
+        return "InvalidResultProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return {
+            "value": value,
+            "type": indicator_type,
+        }
+
 
 @pytest.mark.asyncio
 async def test_successful_provider_returns_enrichment():
@@ -177,3 +276,110 @@ async def test_enrichment_preserves_indicator_value():
 
     assert result.value == "example.com"
     assert result.type == "DOMAIN"
+
+@pytest.mark.asyncio
+async def test_provider_cannot_replace_indicator_identity():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="MEDIUM",
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            UnsafeProvider(),
+        ],
+    )
+
+    assert result.value == "8.8.8.8"
+    assert result.type == "IP"
+
+
+@pytest.mark.asyncio
+async def test_provider_cannot_downgrade_critical_severity():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="CRITICAL",
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            CriticalDowngradeProvider(),
+        ],
+    )
+
+    assert result.severity == "CRITICAL"
+
+
+@pytest.mark.asyncio
+async def test_provider_tags_are_merged_without_duplicates():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="MEDIUM",
+        tags=[
+            "original",
+            "high-risk",
+        ],
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            DuplicateTagProvider(),
+        ],
+    )
+
+    assert result.tags == [
+        "original",
+        "high-risk",
+        "provider",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_empty_provider_source_falls_back_to_provider_name():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="LOW",
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            EmptySourceProvider(),
+        ],
+    )
+
+    assert result.source == "EmptySourceProvider"
+
+
+@pytest.mark.asyncio
+async def test_invalid_provider_result_falls_back_to_next_provider():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="LOW",
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            InvalidResultProvider(),
+            SuccessfulProvider(),
+        ],
+    )
+
+    assert result.source == "SuccessfulProvider"
+    assert result.severity == "HIGH"
+    assert result.value == "8.8.8.8"
+    assert result.type == "IP"
