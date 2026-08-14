@@ -155,6 +155,26 @@ class InvalidResultProvider:
             "type": indicator_type,
         }
 
+class PartialIntelligenceProvider:
+    @property
+    def provider_name(self):
+        return "PartialIntelligenceProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source=self.provider_name,
+            severity="HIGH",
+            malicious=2,
+            suspicious=1,
+            tags=["provider"],
+        )
+
 
 @pytest.mark.asyncio
 async def test_successful_provider_returns_enrichment():
@@ -383,3 +403,51 @@ async def test_invalid_provider_result_falls_back_to_next_provider():
     assert result.severity == "HIGH"
     assert result.value == "8.8.8.8"
     assert result.type == "IP"
+
+@pytest.mark.asyncio
+async def test_provider_enrichment_preserves_existing_reputation_counters():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="HIGH",
+        malicious=5,
+        suspicious=3,
+        harmless=20,
+        tags=["original"],
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            EmptySourceProvider(),
+        ],
+    )
+
+    assert result.malicious == 5
+    assert result.suspicious == 3
+    assert result.harmless == 20
+
+@pytest.mark.asyncio
+async def test_provider_enrichment_preserves_and_extends_reputation_counters():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="MEDIUM",
+        malicious=3,
+        suspicious=2,
+        harmless=10,
+        tags=["original"],
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            PartialIntelligenceProvider(),
+        ],
+    )
+
+    assert result.malicious == 5
+    assert result.suspicious == 3
+    assert result.harmless == 10

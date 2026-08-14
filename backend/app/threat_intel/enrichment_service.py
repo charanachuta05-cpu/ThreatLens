@@ -119,8 +119,24 @@ def _merge_indicator(
 
             # Preserve and combine tags.
             "tags": merged_tags,
+
+            # Preserve existing reputation intelligence
+            # and extend it with provider observations.
+            "malicious": (
+                original.malicious
+                + enriched.malicious
+            ),
+            "suspicious": (
+                original.suspicious
+                + enriched.suspicious
+            ),
+            "harmless": (
+                original.harmless
+                + enriched.harmless
+            ),
         }
     )
+
 
 
 async def enrich_with_providers(
