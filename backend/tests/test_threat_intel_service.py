@@ -451,3 +451,135 @@ async def test_provider_mixed_results_keep_only_valid_indicators():
 
     assert len(indicators) == 1
     assert indicators[0].value == "203.0.113.254"
+
+
+@pytest.mark.asyncio
+async def test_ingestion_rolls_back_indicator_and_alert_on_failure(
+    monkeypatch,
+):
+    """
+    Threat-intelligence ingestion must be atomic.
+
+    If an error occurs after an indicator and its alert have
+    been created, both records must be rolled back together.
+    """
+
+    rollback_test_value = "203.0.113.249"
+
+    db = SessionLocal()
+
+    try:
+        # Ensure the test starts clean.
+        db.query(Indicator).filter(
+            Indicator.value == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        from app.models.alert import Alert
+
+        db.query(Alert).filter(
+            Alert.title
+            == f"Threat Indicator: {rollback_test_value}"
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        class RollbackProvider:
+            provider_name = "RollbackProvider"
+
+            async def collect_indicators(self):
+                return [
+                    ThreatIndicator(
+                        value=rollback_test_value,
+                        type="IP",
+                        source="RollbackProvider",
+                        severity="HIGH",
+                    )
+                ]
+
+        async def mock_collect_all():
+            return (
+                await RollbackProvider()
+                .collect_indicators()
+            )
+
+        monkeypatch.setattr(
+            service.provider_manager,
+            "collect_all",
+            mock_collect_all,
+        )
+
+        def fail_audit_event(
+            action,
+            actor,
+            target,
+        ):
+            raise RuntimeError(
+                "Simulated ingestion failure"
+            )
+
+        monkeypatch.setattr(
+            service,
+            "audit_event",
+            fail_audit_event,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="Simulated ingestion failure",
+        ):
+            await service.ingest_threat_intelligence(
+                db
+            )
+
+        # The indicator must not survive the rollback.
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.value
+                == rollback_test_value
+            )
+            .first()
+        )
+
+        assert indicator is None
+
+        # The automatically generated alert must
+        # also be rolled back.
+        alert = (
+            db.query(Alert)
+            .filter(
+                Alert.title
+                == (
+                    "Threat Indicator: "
+                    f"{rollback_test_value}"
+                )
+            )
+            .first()
+        )
+
+        assert alert is None
+
+    finally:
+        # Cleanup in case the test itself fails before
+        # the transaction rollback occurs.
+        db.rollback()
+
+        db.query(Indicator).filter(
+            Indicator.value == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Alert).filter(
+            Alert.title
+            == f"Threat Indicator: {rollback_test_value}"
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+        db.close()

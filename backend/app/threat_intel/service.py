@@ -98,6 +98,7 @@ def generate_alert_for_indicator(
             if admin
             else None
         ),
+        commit=False,
     )
 
 
@@ -110,12 +111,17 @@ async def ingest_threat_intelligence(
     threat intelligence providers.
 
     The original collection source is preserved
-    even when an external provider enriches the
-    indicator.
+    even when an external provider enriches
+    the indicator.
 
     External provider enrichment is used for
     intelligence and scoring, but does not replace
     the original indicator source.
+
+    The complete ingestion batch is atomic:
+    if any indicator processing step fails, all
+    database changes made during this ingestion
+    transaction are rolled back.
     """
 
     added = 0
@@ -173,7 +179,6 @@ async def ingest_threat_intelligence(
                     enriched.confidence_score
                 ),
 
-                # IMPORTANT:
                 # Preserve the original feed source.
                 source=original_source,
 
@@ -203,7 +208,14 @@ async def ingest_threat_intelligence(
 
         return added
 
-    except SQLAlchemyError:
+    except Exception:
+        # Ingestion is an atomic operation.
+        #
+        # Any failure — database, enrichment,
+        # audit logging, provider processing, or
+        # unexpected application error — must
+        # roll back every database change made
+        # during this ingestion transaction.
         db.rollback()
         raise
 

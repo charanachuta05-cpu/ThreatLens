@@ -18,11 +18,20 @@ def create_alert(
     db: Session,
     alert_data: AlertCreate,
     created_by: int | None,
+    *,
+    commit: bool = True,
 ) -> Alert:
     """
     Create a new alert.
 
-    Database responsibility only.
+    By default, the function commits the transaction for
+    normal API usage.
+
+    When commit=False is supplied, the alert is flushed
+    but the transaction remains open. This allows callers
+    performing multi-step operations to commit or roll back
+    the entire operation atomically.
+
     WebSocket broadcasting is handled by the API route.
     """
 
@@ -36,8 +45,13 @@ def create_alert(
     )
 
     db.add(alert)
-    db.commit()
-    db.refresh(alert)
+
+    if commit:
+        db.commit()
+        db.refresh(alert)
+
+    else:
+        db.flush()
 
     return alert
 
