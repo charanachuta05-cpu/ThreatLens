@@ -1,9 +1,17 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
+
+
+class RecommendationPriority(str, Enum):
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
 
 
 class Recommendation(BaseModel):
     summary: str
-    priority: str
+    priority: RecommendationPriority
     actions: list[str]
 
 
