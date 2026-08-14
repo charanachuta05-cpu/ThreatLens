@@ -45,6 +45,38 @@ class EmptyProvider:
     ):
         return None
 
+class MalformedProvider:
+    provider_name = "MalformedProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        raise KeyError("Malformed provider response")
+
+
+@pytest.mark.asyncio
+async def test_malformed_provider_response_preserves_original_indicator():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Simulated",
+        severity="LOW",
+    )
+
+    enriched = await enrich_with_providers(
+        indicator,
+        [MalformedProvider()],
+    )
+
+    assert enriched.value == "8.8.8.8"
+    assert enriched.type == "IP"
+    assert enriched.source == "Simulated"
+    assert enriched.severity == "LOW"
+    assert enriched.malicious == 0
+    assert enriched.suspicious == 0
+
 
 @pytest.mark.asyncio
 async def test_provider_enrichment_updates_indicator():

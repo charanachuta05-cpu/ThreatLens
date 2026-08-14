@@ -584,3 +584,78 @@ async def test_generic_indicator_report_rejects_unknown_type():
             "EMAIL",
             "test@example.com",
         )
+
+@pytest.mark.asyncio
+async def test_malformed_attributes_raise_provider_error(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "8.8.8.8",
+            "attributes": None,
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    with pytest.raises(
+        AttributeError,
+    ):
+        await provider.get_ip_report(
+            "8.8.8.8"
+        )
+
+
+@pytest.mark.asyncio
+async def test_malformed_analysis_stats_raise_provider_error(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "id": "8.8.8.8",
+            "attributes": {
+                "last_analysis_stats": None,
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    with pytest.raises(
+        AttributeError,
+    ):
+        await provider.get_ip_report(
+            "8.8.8.8"
+        )
+
+
+@pytest.mark.asyncio
+async def test_missing_indicator_id_raises_provider_error(
+    monkeypatch,
+):
+    response_data = {
+        "data": {
+            "attributes": {
+                "last_analysis_stats": {},
+                "reputation": 20,
+            },
+        }
+    }
+
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    with pytest.raises(
+        KeyError,
+    ):
+        await provider.get_ip_report(
+            "8.8.8.8"
+        )
