@@ -3,11 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import require_roles
 from app.core.database import SessionLocal
+from app.investigation.schemas import InvestigationResponse
+from app.investigation.service import investigate_indicator
 from app.models.user import User
 
-from app.investigation.service import (
-    investigate_indicator,
-)
 
 router = APIRouter(
     prefix="/investigations",
@@ -17,17 +16,21 @@ router = APIRouter(
 
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
     finally:
         db.close()
 
 
-@router.get("/{indicator_id}")
+@router.get(
+    "/{indicator_id}",
+    response_model=InvestigationResponse,
+)
 def investigate(
     indicator_id: int,
     current_user: User = Depends(
-        require_roles("admin", "analyst")
+        require_roles("admin", "analyst"),
     ),
     db: Session = Depends(get_db),
 ):
@@ -41,4 +44,4 @@ def investigate(
         raise HTTPException(
             status_code=404,
             detail=str(exc),
-        )
+        ) from exc

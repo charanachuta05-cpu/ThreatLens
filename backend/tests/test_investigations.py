@@ -1,4 +1,133 @@
 from app.core.security import create_access_token
+from app.models.alert import Alert, AlertSeverity, AlertStatus
+
+def create_test_alert(
+    indicator_id: int,
+    *,
+    in_description: bool = True,
+):
+    db = SessionLocal()
+
+    try:
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.id == indicator_id,
+            )
+            .first()
+        )
+
+        if indicator is None:
+            raise RuntimeError(
+                "Test indicator does not exist."
+            )
+
+        if in_description:
+            title = "Threat intelligence alert"
+            description = (
+                f"Observed indicator: {indicator.value}"
+            )
+        else:
+            title = (
+                f"Threat detected: {indicator.value}"
+            )
+            description = "Threat intelligence event"
+
+        alert = Alert(
+            title=title,
+            description=description,
+            severity=AlertSeverity.HIGH,
+            status=AlertStatus.OPEN,
+            source="pytest",
+            created_by=1,
+        )
+
+        db.add(alert)
+        db.commit()
+        db.refresh(alert)
+
+        return alert.id
+
+    finally:
+        db.close()
+
+def delete_test_alert(alert_id: int):
+    db = SessionLocal()
+
+    try:
+        db.query(Alert).filter(
+            Alert.id == alert_id,
+        ).delete(
+            synchronize_session=False,
+        )
+
+        db.commit()
+
+    finally:
+        db.close()
+
+def test_investigation_finds_alert_by_description(
+    client,
+    admin_headers,
+):
+    delete_test_indicator()
+
+    indicator_id = create_test_indicator()
+    alert_id = create_test_alert(
+        indicator_id,
+        in_description=True,
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        alerts = response.json()["alerts"]
+
+        assert any(
+            alert["id"] == alert_id
+            for alert in alerts
+        )
+
+    finally:
+        delete_test_alert(alert_id)
+        delete_test_indicator()
+
+
+def test_investigation_finds_alert_by_title(
+    client,
+    admin_headers,
+):
+    delete_test_indicator()
+
+    indicator_id = create_test_indicator()
+    alert_id = create_test_alert(
+        indicator_id,
+        in_description=False,
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        alerts = response.json()["alerts"]
+
+        assert any(
+            alert["id"] == alert_id
+            for alert in alerts
+        )
+
+    finally:
+        delete_test_alert(alert_id)
+        delete_test_indicator()
 
 
 def make_role_headers(

@@ -2,32 +2,104 @@ from app.threat_intel.correlation import correlate_indicators
 from app.threat_intel.schemas import ThreatIndicator
 
 
-def test_high_correlation():
-    first = ThreatIndicator(
-        value="1.1.1.1",
-        type="IP",
-        source="VirusTotal",
-        severity="HIGH",
-        reputation=80,
-        malicious=5,
-        suspicious=1,
-        harmless=0,
-        tags=["botnet", "c2"],
+def make_indicator(
+    *,
+    indicator_type: str = "IP",
+    severity: str = "HIGH",
+    source: str = "pytest",
+    reputation: int = 50,
+    tags: list[str] | None = None,
+) -> ThreatIndicator:
+    return ThreatIndicator(
+        value="198.51.100.1",
+        type=indicator_type,
+        source=source,
+        severity=severity,
+        reputation=reputation,
+        tags=tags or [],
     )
 
-    second = ThreatIndicator(
-        value="2.2.2.2",
-        type="IP",
-        source="VirusTotal",
+
+def test_correlation_identifies_strong_relationship():
+    left = make_indicator(
+        indicator_type="IP",
         severity="HIGH",
-        reputation=75,
-        malicious=6,
-        suspicious=1,
-        harmless=0,
-        tags=["c2"],
+        source="pytest",
+        reputation=50,
+        tags=["ip", "high"],
     )
 
-    result = correlate_indicators(first, second)
+    right = make_indicator(
+        indicator_type="IP",
+        severity="HIGH",
+        source="pytest",
+        reputation=60,
+        tags=["ip", "high"],
+    )
 
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert result.score == 100
     assert result.related is True
-    assert result.score >= 80
+
+    assert "Same indicator type" in result.reasons
+    assert "Same severity" in result.reasons
+    assert "Same intelligence source" in result.reasons
+    assert "Similar reputation" in result.reasons
+    assert "Shared tags: high, ip" in result.reasons
+
+
+def test_correlation_identifies_unrelated_indicators():
+    left = make_indicator(
+        indicator_type="IP",
+        severity="HIGH",
+        source="source-a",
+        reputation=10,
+        tags=["ip"],
+    )
+
+    right = make_indicator(
+        indicator_type="DOMAIN",
+        severity="LOW",
+        source="source-b",
+        reputation=90,
+        tags=["domain"],
+    )
+
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert result.score == 0
+    assert result.related is False
+    assert result.reasons == []
+
+
+def test_correlation_threshold_is_60():
+    left = make_indicator(
+        indicator_type="IP",
+        severity="HIGH",
+        source="source-a",
+        reputation=50,
+        tags=[],
+    )
+
+    right = make_indicator(
+        indicator_type="IP",
+        severity="LOW",
+        source="source-a",
+        reputation=90,
+        tags=[],
+    )
+
+    result = correlate_indicators(
+        left,
+        right,
+    )
+
+    assert result.score == 40
+    assert result.related is False

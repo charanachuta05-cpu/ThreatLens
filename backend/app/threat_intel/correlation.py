@@ -19,8 +19,20 @@ def correlate_indicators(
     right: ThreatIndicator,
 ) -> CorrelationResult:
     """
-    Compare two indicators and calculate
-    a correlation score from 0 to 100.
+    Compare two indicators and calculate a
+    correlation score from 0 to 100.
+
+    Scoring:
+
+        Same type       +20
+        Same severity   +20
+        Same source     +20
+        Similar         +20
+        reputation
+        Shared tags     +20
+
+    Indicators are considered related when
+    the final score is at least 60.
     """
 
     score = 0
@@ -28,23 +40,31 @@ def correlate_indicators(
 
     if left.type == right.type:
         score += 20
-        reasons.append("Same indicator type")
+        reasons.append(
+            "Same indicator type",
+        )
 
     if left.severity == right.severity:
         score += 20
-        reasons.append("Same severity")
+        reasons.append(
+            "Same severity",
+        )
 
     if left.source == right.source:
         score += 20
-        reasons.append("Same intelligence source")
+        reasons.append(
+            "Same intelligence source",
+        )
 
     reputation_difference = abs(
-        left.reputation - right.reputation
+        left.reputation - right.reputation,
     )
 
     if reputation_difference <= 20:
         score += 20
-        reasons.append("Similar reputation")
+        reasons.append(
+            "Similar reputation",
+        )
 
     shared_tags = (
         set(left.tags)
@@ -55,7 +75,7 @@ def correlate_indicators(
         score += 20
         reasons.append(
             "Shared tags: "
-            + ", ".join(sorted(shared_tags))
+            + ", ".join(sorted(shared_tags)),
         )
 
     score = min(score, 100)
