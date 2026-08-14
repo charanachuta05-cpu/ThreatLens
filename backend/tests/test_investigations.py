@@ -658,3 +658,160 @@ def test_investigation_excludes_unrelated_indicators(
             "203.0.113.50"
         )
         delete_test_indicator()
+
+def test_investigation_returns_empty_related_indicators_when_none_match(
+    client,
+    admin_headers,
+):
+    delete_test_indicator()
+
+    primary_id = create_test_indicator()
+
+    unrelated_value = "203.0.113.60"
+
+    unrelated_id = create_related_test_indicator(
+        value=unrelated_value,
+        severity="LOW",
+        source="unrelated-source",
+        threat_score=10,
+        reputation_score=100,
+        confidence_score=0,
+        tags="domain,benign",
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{primary_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        related = response.json()["related_indicators"]
+
+        assert related == []
+
+    finally:
+        delete_indicator_by_value(unrelated_value)
+        delete_test_indicator()
+
+
+def test_investigation_sorts_related_indicators_by_correlation_score(
+    client,
+    admin_headers,
+):
+    delete_test_indicator()
+
+    primary_id = create_test_indicator()
+
+    # Strong correlation:
+    # same type + severity + source + similar reputation
+    # + similar confidence + shared tags = 100.
+    strong_value = "198.51.100.244"
+
+    strong_id = create_related_test_indicator(
+        value=strong_value,
+        severity="HIGH",
+        source="pytest",
+        threat_score=85,
+        reputation_score=42,
+        confidence_score=65,
+        tags="ip,high,high-risk",
+    )
+
+    # Weaker but still related:
+    # same type + severity + similar reputation
+    # + similar confidence = 65.
+    weak_value = "198.51.100.245"
+
+    weak_id = create_related_test_indicator(
+        value=weak_value,
+        severity="HIGH",
+        source="different-source",
+        threat_score=80,
+        reputation_score=45,
+        confidence_score=65,
+        tags="other",
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{primary_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        related = response.json()["related_indicators"]
+
+        ids = [item["id"] for item in related]
+
+        assert strong_id in ids
+        assert weak_id in ids
+
+        assert ids.index(strong_id) < ids.index(weak_id)
+
+        scores = [
+            item["correlation_score"]
+            for item in related
+        ]
+
+        assert scores == sorted(
+            scores,
+            reverse=True,
+        )
+
+    finally:
+        delete_indicator_by_value(strong_value)
+        delete_indicator_by_value(weak_value)
+        delete_test_indicator()
+
+
+def test_investigation_deduplicates_and_cleans_tags(
+    client,
+    admin_headers,
+):
+    delete_test_indicator()
+
+    db = SessionLocal()
+
+    try:
+        indicator = Indicator(
+            indicator_type="IP",
+            value=TEST_INDICATOR_VALUE,
+            severity="HIGH",
+            source="pytest",
+            description="Tag normalization test",
+            threat_score=85,
+            reputation_score=40,
+            confidence_score=67,
+            tags="ip, high,ip,, high-risk, high-risk,",
+        )
+
+        db.add(indicator)
+        db.commit()
+        db.refresh(indicator)
+
+        indicator_id = indicator.id
+
+    finally:
+        db.close()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        tags = response.json()["tags"]
+
+        assert tags == [
+            "ip",
+            "high",
+            "high-risk",
+        ]
+
+    finally:
+        delete_test_indicator()
