@@ -144,12 +144,12 @@ async def enrich_with_providers(
     providers,
 ) -> ThreatIndicator:
     """
-    Enrich an indicator using registered
+    Enrich an indicator using all registered
     threat intelligence providers.
 
     Provider failures are isolated so that
     one unavailable provider does not stop
-    the enrichment process.
+    the remaining providers.
 
     Provider enrichment may enhance the IOC,
     but it must never downgrade its existing
@@ -158,6 +158,8 @@ async def enrich_with_providers(
 
     indicator_type = indicator.type.strip().upper()
     value = indicator.value.strip()
+
+    enriched_indicator = indicator
 
     for provider in providers:
 
@@ -213,8 +215,8 @@ async def enrich_with_providers(
                 value,
             )
 
-            return _merge_indicator(
-                original=indicator,
+            enriched_indicator = _merge_indicator(
+                original=enriched_indicator,
                 enriched=result,
                 provider_name=provider_name,
             )
@@ -227,10 +229,11 @@ async def enrich_with_providers(
                 exc,
             )
 
-    logger.warning(
-        "No provider could enrich indicator %s. "
-        "Returning original indicator.",
-        value,
-    )
+    if enriched_indicator is indicator:
+        logger.warning(
+            "No provider could enrich indicator %s. "
+            "Returning original indicator.",
+            value,
+        )
 
-    return indicator
+    return enriched_indicator

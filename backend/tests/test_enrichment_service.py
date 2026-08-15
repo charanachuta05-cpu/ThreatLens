@@ -175,6 +175,49 @@ class PartialIntelligenceProvider:
             tags=["provider"],
         )
 
+class SecondaryIntelligenceProvider:
+    @property
+    def provider_name(self):
+        return "SecondaryIntelligenceProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source=self.provider_name,
+            severity="CRITICAL",
+            malicious=4,
+            suspicious=2,
+            harmless=5,
+            tags=["botnet", "c2"],
+        )
+
+
+class AdditionalIntelligenceProvider:
+    @property
+    def provider_name(self):
+        return "AdditionalIntelligenceProvider"
+
+    async def get_indicator_report(
+        self,
+        indicator_type: str,
+        value: str,
+    ):
+        return ThreatIndicator(
+            value=value,
+            type=indicator_type,
+            source=self.provider_name,
+            severity="HIGH",
+            malicious=1,
+            suspicious=3,
+            harmless=7,
+            tags=["malware", "additional"],
+        )
+
 
 @pytest.mark.asyncio
 async def test_successful_provider_returns_enrichment():
@@ -451,3 +494,77 @@ async def test_provider_enrichment_preserves_and_extends_reputation_counters():
     assert result.malicious == 5
     assert result.suspicious == 3
     assert result.harmless == 10
+
+@pytest.mark.asyncio
+async def test_multiple_providers_aggregate_intelligence():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="MEDIUM",
+        malicious=2,
+        suspicious=1,
+        harmless=10,
+        tags=["original"],
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            SecondaryIntelligenceProvider(),
+            AdditionalIntelligenceProvider(),
+        ],
+    )
+
+    assert result.value == "8.8.8.8"
+    assert result.type == "IP"
+
+    assert result.severity == "CRITICAL"
+
+    assert result.malicious == 7
+    assert result.suspicious == 6
+    assert result.harmless == 22
+
+    assert result.tags == [
+        "original",
+        "botnet",
+        "c2",
+        "malware",
+        "additional",
+    ]
+
+@pytest.mark.asyncio
+async def test_provider_failure_does_not_prevent_later_provider_aggregation():
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Original",
+        severity="LOW",
+        malicious=1,
+        suspicious=0,
+        harmless=5,
+        tags=["original"],
+    )
+
+    result = await enrich_with_providers(
+        indicator,
+        providers=[
+            FailingProvider(),
+            AdditionalIntelligenceProvider(),
+        ],
+    )
+
+    assert result.value == "8.8.8.8"
+    assert result.type == "IP"
+
+    assert result.malicious == 2
+    assert result.suspicious == 3
+    assert result.harmless == 12
+
+    assert result.severity == "HIGH"
+
+    assert result.tags == [
+        "original",
+        "malware",
+        "additional",
+    ]
