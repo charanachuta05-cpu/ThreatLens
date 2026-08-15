@@ -270,49 +270,44 @@
   font-size: 10px;
 }
 
-.recommendation-card {
-  display: flex;
-  gap: 13px;
-  padding: 18px;
-  border-color: #1d4ed8;
-  background: #0f1b35;
+.investigation-recommendation {
+  padding: 16px;
+  display: grid;
+  gap: 10px;
 }
 
-.recommendation-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  background: #172554;
-  border-radius: 7px;
-  color: #60a5fa;
-}
-
-.recommendation-card > div:last-child {
-  min-width: 0;
-}
-
-.recommendation-card span {
-  color: #93c5fd;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.recommendation-card p {
-  margin: 7px 0 0;
+.investigation-recommendation p {
+  margin: 0;
   color: #cbd5e1;
   font-size: 11px;
   line-height: 1.6;
 }
 
-.related-list {
+.investigation-recommendation strong {
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.investigation-recommendation ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #cbd5e1;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.investigation-recommendation li {
+  margin-bottom: 4px;
+}
+
+.related-indicators,
+.related-alerts {
   display: grid;
 }
 
-.related-row {
+.related-indicator,
+.related-alert {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -321,25 +316,25 @@
   border-top: 1px solid #1e293b;
 }
 
-.related-row > div:first-child {
+.related-indicator > div:first-child {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.related-row > div:last-child {
+.related-indicator > div:last-child {
   display: flex;
   align-items: center;
   gap: 9px;
   flex-shrink: 0;
 }
 
-.related-row span:not(.severity-badge) {
+.related-indicator span {
   color: #64748b;
   font-size: 9px;
 }
 
-.related-row strong {
+.related-indicator strong {
   max-width: 400px;
   overflow: hidden;
   color: #cbd5e1;
@@ -349,14 +344,25 @@
   white-space: nowrap;
 }
 
-.related-row b {
-  color: #e2e8f0;
-  font-size: 11px;
+.related-alert {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
 }
 
-.related-row small {
-  color: #475569;
-  font-size: 8px;
+.related-alert strong {
+  color: #cbd5e1;
+  font-size: 10px;
+}
+
+.related-alert span {
+  color: #64748b;
+  font-size: 9px;
+}
+
+.alert-status {
+  color: #94a3b8;
+  font-size: 9px;
 }
 
 .alert-status {

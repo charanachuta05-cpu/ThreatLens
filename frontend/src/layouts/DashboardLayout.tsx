@@ -13,34 +13,83 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "../context/useAuth";
+import type { UserRole } from "../context/AuthContextDefinition";
 
 import "./DashboardLayout.css";
 
-function DashboardLayout() {
-  const { logout } = useAuth();
+interface NavigationItem {
+  name: string;
+  path: string;
+  icon: typeof LayoutDashboard;
+  allowedRoles?: UserRole[];
+}
 
-  const navigation = [
-    {
-      name: "Dashboard",
-      path: "/dashboard",
-      icon: LayoutDashboard,
-    },
-    {
-      name: "Indicators",
-      path: "/indicators",
-      icon: Search,
-    },
-    {
-      name: "Investigations",
-      path: "/investigations",
-      icon: ShieldAlert,
-    },
-    {
-      name: "Alerts",
-      path: "/alerts",
-      icon: Bell,
-    },
-  ];
+const navigation: NavigationItem[] = [
+  {
+    name: "Dashboard",
+    path: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  {
+    name: "Indicators",
+    path: "/indicators",
+    icon: Search,
+  },
+  {
+    name: "Investigations",
+    path: "/investigations",
+    icon: ShieldAlert,
+    allowedRoles: ["admin", "analyst"],
+  },
+  {
+    name: "Alerts",
+    path: "/alerts",
+    icon: Bell,
+  },
+];
+
+function formatRole(
+  role: UserRole | null,
+): string {
+  if (!role) {
+    return "User";
+  }
+
+  return (
+    role.charAt(0).toUpperCase() +
+    role.slice(1)
+  );
+}
+
+function getRoleDescription(
+  role: UserRole | null,
+): string {
+  switch (role) {
+    case "admin":
+      return "Security Administrator";
+
+    case "analyst":
+      return "Security Operations";
+
+    case "viewer":
+      return "Read-only Access";
+
+    default:
+      return "Security Operations";
+  }
+}
+
+function DashboardLayout() {
+  const {
+    logout,
+    role,
+  } = useAuth();
+
+  const formattedRole =
+    formatRole(role);
+
+  const roleDescription =
+    getRoleDescription(role);
 
   return (
     <div className="dashboard-layout">
@@ -69,7 +118,10 @@ function DashboardLayout() {
 
         {/* Navigation */}
 
-        <nav className="sidebar-nav">
+        <nav
+          className="sidebar-nav"
+          aria-label="Primary navigation"
+        >
 
           <p className="nav-label">
             MONITORING
@@ -94,14 +146,17 @@ function DashboardLayout() {
                     }`
                   }
                 >
-                  <Icon size={19} />
+                  <Icon
+                    size={19}
+                    aria-hidden="true"
+                  />
 
                   <span>
                     {item.name}
                   </span>
                 </NavLink>
               );
-            }
+            },
           )}
 
         </nav>
@@ -112,9 +167,18 @@ function DashboardLayout() {
 
           <NavLink
             to="/settings"
-            className="nav-item"
+            className={({ isActive }) =>
+              `nav-item ${
+                isActive
+                  ? "active"
+                  : ""
+              }`
+            }
           >
-            <Settings size={19} />
+            <Settings
+              size={19}
+              aria-hidden="true"
+            />
 
             <span>
               Settings
@@ -126,7 +190,10 @@ function DashboardLayout() {
             className="logout-button"
             onClick={logout}
           >
-            <LogOut size={19} />
+            <LogOut
+              size={19}
+              aria-hidden="true"
+            />
 
             <span>
               Logout
@@ -150,38 +217,51 @@ function DashboardLayout() {
           <div>
             <span className="system-status">
 
-              <span className="status-dot" />
+              <span
+                className="status-dot"
+                aria-hidden="true"
+              />
 
-              Threat Intelligence Engine Online
+              Threat Intelligence
+              Engine Online
 
             </span>
           </div>
 
+          {/* Authenticated User */}
+
           <div className="topbar-user">
 
-            <div className="user-avatar">
-              A
+            <div
+              className="user-avatar"
+              aria-hidden="true"
+            >
+              {formattedRole
+                .charAt(0)
+                .toUpperCase()}
             </div>
 
-            <div>
+            <div className="topbar-user-info">
+
               <strong>
-                Analyst
+                {formattedRole}
               </strong>
 
               <span>
-                Security Operations
+                {roleDescription}
               </span>
+
             </div>
 
           </div>
 
         </header>
 
-        {/* Page */}
+        {/* Page Content */}
 
-        <section className="page-content">
+        <div className="page-content">
           <Outlet />
-        </section>
+        </div>
 
       </main>
 

@@ -10,6 +10,7 @@ import Alerts from "./pages/Alerts";
 import Indicators from "./pages/Indicators";
 import Investigations from "./pages/Investigations";
 import DashboardLayout from "./layouts/DashboardLayout";
+import RoleRoute from "./components/RoleRoute";
 
 import { useAuth } from "./context/useAuth";
 
@@ -83,10 +84,25 @@ function App() {
           element={<Indicators />}
         />
 
+        {/* =========================
+            Analyst/Admin Routes
+        ========================= */}
+
         <Route
-          path="/investigations"
-          element={<Investigations />}
-        />
+          element={
+            <RoleRoute
+              allowedRoles={[
+                "admin",
+                "analyst",
+              ]}
+            />
+          }
+        >
+          <Route
+            path="/investigations"
+            element={<Investigations />}
+          />
+        </Route>
 
         <Route
           path="/alerts"

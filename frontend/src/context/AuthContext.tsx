@@ -12,14 +12,78 @@ import {
 import {
   AuthContext,
   type AuthContextType,
+  type UserRole,
 } from "./AuthContextDefinition";
 
 interface AuthProviderProps {
   children: ReactNode;
 }
 
+interface JwtPayload {
+  role?: string;
+}
+
 const ACCESS_TOKEN_KEY = "access_token";
 const TOKEN_TYPE_KEY = "token_type";
+
+function getRoleFromToken(
+  token: string | null,
+): UserRole | null {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const parts = token.split(".");
+
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const encodedPayload = parts[1];
+
+    const normalizedPayload =
+      encodedPayload
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+    const paddedPayload =
+      normalizedPayload.padEnd(
+        Math.ceil(
+          normalizedPayload.length / 4,
+        ) * 4,
+        "=",
+      );
+
+    const payload = JSON.parse(
+      atob(paddedPayload),
+    ) as JwtPayload;
+
+    const role = payload.role
+      ?.trim()
+      .toLowerCase();
+
+    if (
+      role === "admin" ||
+      role === "analyst" ||
+      role === "viewer"
+    ) {
+      return role;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getStoredRole(): UserRole | null {
+  return getRoleFromToken(
+    localStorage.getItem(
+      ACCESS_TOKEN_KEY,
+    ),
+  );
+}
 
 export function AuthProvider({
   children,
@@ -33,11 +97,16 @@ export function AuthProvider({
       ),
     );
 
+  const [role, setRole] =
+    useState<UserRole | null>(
+      getStoredRole,
+    );
+
   const [loading, setLoading] =
     useState<boolean>(false);
 
   /*
-   * Listen for unauthorized API responses.
+   * Handle unauthorized API responses.
    */
   useEffect(() => {
     function handleUnauthorized() {
@@ -50,6 +119,7 @@ export function AuthProvider({
       );
 
       setAuthenticated(false);
+      setRole(null);
     }
 
     window.addEventListener(
@@ -66,7 +136,7 @@ export function AuthProvider({
   }, []);
 
   /*
-   * Login
+   * Login.
    */
   async function login(
     credentials: LoginRequest,
@@ -94,13 +164,19 @@ export function AuthProvider({
       );
 
       setAuthenticated(true);
+
+      setRole(
+        getRoleFromToken(
+          data.access_token,
+        ),
+      );
     } finally {
       setLoading(false);
     }
   }
 
   /*
-   * Logout
+   * Logout.
    */
   function logout(): void {
     localStorage.removeItem(
@@ -112,11 +188,13 @@ export function AuthProvider({
     );
 
     setAuthenticated(false);
+    setRole(null);
   }
 
   const value: AuthContextType = {
     authenticated,
     loading,
+    role,
     login,
     logout,
   };

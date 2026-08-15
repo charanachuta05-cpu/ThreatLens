@@ -5,7 +5,6 @@ from app.api.dependencies.auth import require_roles
 from app.core.database import SessionLocal
 from app.investigation.schemas import InvestigationResponse
 from app.investigation.service import investigate_indicator
-from app.models.user import User
 
 
 router = APIRouter(
@@ -26,12 +25,14 @@ def get_db():
 @router.get(
     "/{indicator_id}",
     response_model=InvestigationResponse,
+    dependencies=[
+        Depends(
+            require_roles("admin", "analyst"),
+        )
+    ],
 )
 def investigate(
     indicator_id: int,
-    current_user: User = Depends(
-        require_roles("admin", "analyst"),
-    ),
     db: Session = Depends(get_db),
 ):
     try:
