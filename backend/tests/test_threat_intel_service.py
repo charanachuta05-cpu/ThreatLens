@@ -3,6 +3,7 @@ import pytest
 from app.core.database import SessionLocal
 from app.threat_intel import service
 from app.threat_intel.models import Indicator
+from app.models.audit import AuditEvent
 from app.threat_intel.providers.manager import ThreatProviderManager
 from app.threat_intel.schemas import ThreatIndicator
 
@@ -220,6 +221,267 @@ async def test_ingestion_persists_enriched_indicator(monkeypatch):
         db.close()
         service.provider_manager = original_manager
         delete_test_indicator()
+
+@pytest.mark.asyncio
+async def test_ingestion_records_audit_event(monkeypatch):
+    """
+    Successful threat-intelligence ingestion must persist an
+    AUTO_INGEST_INDICATOR audit event together with the indicator.
+    """
+
+    audit_test_value = "203.0.113.248"
+
+    db = SessionLocal()
+
+    try:
+        # Ensure the test starts clean.
+        db.query(Indicator).filter(
+            Indicator.value == audit_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == audit_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+
+        class AuditProvider:
+            provider_name = "AuditTestProvider"
+
+            async def collect_indicators(self):
+                return [
+                    ThreatIndicator(
+                        value=audit_test_value,
+                        type="IP",
+                        source="AuditTestProvider",
+                        severity="HIGH",
+                    )
+                ]
+
+        async def mock_collect_all():
+            return (
+                await AuditProvider()
+                .collect_indicators()
+            )
+
+        monkeypatch.setattr(
+            service.provider_manager,
+            "collect_all",
+            mock_collect_all,
+        )
+
+        added = await service.ingest_threat_intelligence(
+            db
+        )
+
+        assert added == 1
+
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.value == audit_test_value
+            )
+            .first()
+        )
+
+        assert indicator is not None
+
+        event = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.target == audit_test_value,
+                AuditEvent.action
+                == "AUTO_INGEST_INDICATOR",
+            )
+            .first()
+        )
+
+        assert event is not None
+        assert event.actor == "system"
+        assert event.target == audit_test_value
+
+    finally:
+        db.rollback()
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == audit_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Indicator).filter(
+            Indicator.value == audit_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_ingestion_rolls_back_indicator_alert_and_audit_event(
+    monkeypatch,
+):
+    """
+    Indicator, generated alert, and audit event must all
+    participate in the same transaction.
+
+    If audit logging fails, none of the records may survive.
+    """
+
+    rollback_test_value = "203.0.113.247"
+
+    from app.models.alert import Alert
+
+    db = SessionLocal()
+
+    try:
+        # Ensure the test starts clean.
+        db.query(Indicator).filter(
+            Indicator.value == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Alert).filter(
+            Alert.title
+            == f"Threat Indicator: {rollback_test_value}"
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        audit = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.target == rollback_test_value
+            )
+            .first()
+        )
+
+        assert audit is None
+
+        db.commit()
+
+        class RollbackProvider:
+            provider_name = "RollbackAuditProvider"
+
+            async def collect_indicators(self):
+                return [
+                    ThreatIndicator(
+                        value=rollback_test_value,
+                        type="IP",
+                        source="RollbackAuditProvider",
+                        severity="HIGH",
+                    )
+                ]
+
+        async def mock_collect_all():
+            return (
+                await RollbackProvider()
+                .collect_indicators()
+            )
+
+        monkeypatch.setattr(
+            service.provider_manager,
+            "collect_all",
+            mock_collect_all,
+        )
+
+        def fail_audit_event(
+            db,
+            action,
+            actor,
+            target,
+        ):
+            raise RuntimeError(
+                "Simulated audit failure"
+            )
+
+        monkeypatch.setattr(
+            service,
+            "audit_event",
+            fail_audit_event,
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="Simulated audit failure",
+        ):
+            await service.ingest_threat_intelligence(
+                db
+            )
+
+        # Indicator must not survive.
+        assert (
+            db.query(Indicator)
+            .filter(
+                Indicator.value
+                == rollback_test_value
+            )
+            .first()
+            is None
+        )
+
+        # Automatically generated alert must not survive.
+        assert (
+            db.query(Alert)
+            .filter(
+                Alert.title
+                == (
+                    "Threat Indicator: "
+                    f"{rollback_test_value}"
+                )
+            )
+            .first()
+            is None
+        )
+
+        # Audit event must not survive.
+        assert (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.target
+                == rollback_test_value
+            )
+            .first()
+            is None
+        )
+
+    finally:
+        db.rollback()
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Indicator).filter(
+            Indicator.value == rollback_test_value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Alert).filter(
+            Alert.title
+            == f"Threat Indicator: {rollback_test_value}"
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+        db.close()
 
 
 @pytest.mark.asyncio

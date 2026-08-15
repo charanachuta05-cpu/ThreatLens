@@ -199,7 +199,7 @@ async def ingest_threat_intelligence(
             audit_event(
                 db=db,
                 action="AUTO_INGEST_INDICATOR",
-                actor="scheduler",
+                actor="system",
                 target=db_indicator.value,
             )
 
