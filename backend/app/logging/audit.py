@@ -13,10 +13,10 @@ def audit_event(
     """
     Record a persistent security audit event.
 
-    The event is added to the caller's SQLAlchemy session but is
-    deliberately not committed. The caller owns the transaction,
-    allowing the audit record to succeed or roll back atomically
-    with the operation being audited.
+    The event is added to the caller's SQLAlchemy session and
+    flushed, but deliberately not committed. The caller owns
+    the transaction, allowing the audit record to succeed or
+    roll back atomically with the operation being audited.
     """
 
     event = AuditEvent(
@@ -26,6 +26,7 @@ def audit_event(
     )
 
     db.add(event)
+    db.flush()
 
     logger.info(
         "[AUDIT] %s | Actor=%s | Target=%s",

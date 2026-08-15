@@ -162,6 +162,8 @@ def update_alert(
     db: Session,
     alert: Alert,
     alert_data: AlertUpdate,
+    *,
+    commit: bool = True,
 ) -> Alert:
     """
     Safely update an existing alert.
@@ -171,8 +173,9 @@ def update_alert(
     assigned_to is validated before the alert is changed.
     The assigned user must exist and be active.
 
-    Database failures are rolled back so the SQLAlchemy
-    session remains usable after an exception.
+    When commit=False is supplied, the alert is flushed but
+    the transaction remains open so callers can perform
+    additional atomic operations such as audit logging.
     """
 
     update_data = alert_data.model_dump(
@@ -211,12 +214,15 @@ def update_alert(
         setattr(alert, key, value)
 
     # --------------------------------------------------------
-    # Persist changes safely
+    # Persist changes
     # --------------------------------------------------------
 
     try:
-        db.commit()
-        db.refresh(alert)
+        if commit:
+            db.commit()
+            db.refresh(alert)
+        else:
+            db.flush()
 
     except SQLAlchemyError:
         db.rollback()
@@ -228,13 +234,28 @@ def update_alert(
 def delete_alert(
     db: Session,
     alert: Alert,
+    *,
+    commit: bool = True,
 ) -> None:
     """
     Delete an alert.
+
+    When commit=False is supplied, the deletion is flushed but
+    the transaction remains open so callers can perform
+    additional atomic operations such as audit logging.
     """
 
     db.delete(alert)
-    db.commit()
+
+    try:
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
 
 def get_alert_by_title(

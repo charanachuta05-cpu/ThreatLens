@@ -28,6 +28,7 @@ from app.services.alert_service import (
     update_alert,
 )
 from app.websockets.manager import manager
+from app.logging.audit import audit_event
 
 
 router = APIRouter(
@@ -61,7 +62,18 @@ async def create_new_alert(
         db=db,
         alert_data=alert,
         created_by=current_user.id,
+        commit=False,
     )
+
+    audit_event(
+        db=db,
+        action="CREATE_ALERT",
+        actor=current_user.email,
+        target=f"alert:{created_alert.id}",
+    )
+
+    db.commit()
+    db.refresh(created_alert)
 
     await manager.broadcast_to_roles(
         ["admin", "analyst"],
@@ -241,7 +253,18 @@ async def update_existing_alert(
         db=db,
         alert=alert,
         alert_data=alert_data,
+        commit=False,
     )
+
+    audit_event(
+        db=db,
+        action="UPDATE_ALERT",
+        actor=current_user.email,
+        target=f"alert:{updated_alert.id}",
+    )
+
+    db.commit()
+    db.refresh(updated_alert)
 
     await manager.broadcast_to_roles(
         ["admin", "analyst"],
@@ -313,7 +336,17 @@ async def remove_alert(
     delete_alert(
         db=db,
         alert=alert,
+        commit=False,
     )
+
+    audit_event(
+        db=db,
+        action="DELETE_ALERT",
+        actor=current_user.email,
+        target=f"alert:{deleted_alert_id}",
+    )
+
+    db.commit()
 
     await manager.broadcast_to_role(
         "admin",

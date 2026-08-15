@@ -307,3 +307,149 @@ def test_invalid_alert_status_rejected(
     )
 
     assert response.status_code == 422
+
+# -------------------------------------------------
+# Audit Event Verification
+# -------------------------------------------------
+
+def get_audit_events_for_target(target):
+    from app.core.database import SessionLocal
+    from app.models.audit import AuditEvent
+
+    db = SessionLocal()
+
+    try:
+        return (
+            db.query(AuditEvent)
+            .filter(AuditEvent.target == target)
+            .order_by(AuditEvent.id.desc())
+            .all()
+        )
+    finally:
+        db.close()
+
+
+def test_create_alert_records_audit_event(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    events = get_audit_events_for_target(
+        f"alert:{alert_id}"
+    )
+
+    try:
+        assert any(
+            event.action == "CREATE_ALERT"
+            for event in events
+        )
+        assert any(
+            event.target == f"alert:{alert_id}"
+            for event in events
+        )
+    finally:
+        from app.core.database import SessionLocal
+        from app.models.audit import AuditEvent
+
+        db = SessionLocal()
+
+        try:
+            db.query(AuditEvent).filter(
+                AuditEvent.target == f"alert:{alert_id}"
+            ).delete(
+                synchronize_session=False
+            )
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_update_alert_records_audit_event(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.put(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+        json={
+            "title": "Audited Update",
+        },
+    )
+
+    assert response.status_code == 200
+
+    events = get_audit_events_for_target(
+        f"alert:{alert_id}"
+    )
+
+    try:
+        assert any(
+            event.action == "UPDATE_ALERT"
+            for event in events
+        )
+    finally:
+        from app.core.database import SessionLocal
+        from app.models.audit import AuditEvent
+
+        db = SessionLocal()
+
+        try:
+            db.query(AuditEvent).filter(
+                AuditEvent.target == f"alert:{alert_id}"
+            ).delete(
+                synchronize_session=False
+            )
+            db.commit()
+        finally:
+            db.close()
+
+
+def test_delete_alert_records_audit_event(
+    client,
+    admin_headers,
+):
+    alert_id = create_test_alert(
+        client,
+        admin_headers,
+    )
+
+    response = client.delete(
+        f"/alerts/{alert_id}",
+        headers=admin_headers,
+    )
+
+    assert response.status_code in (200, 204)
+
+    events = get_audit_events_for_target(
+        f"alert:{alert_id}"
+    )
+
+    try:
+        assert any(
+            event.action == "DELETE_ALERT"
+            for event in events
+        )
+    finally:
+        from app.core.database import SessionLocal
+        from app.models.audit import AuditEvent
+
+        db = SessionLocal()
+
+        try:
+            db.query(AuditEvent).filter(
+                AuditEvent.target == f"alert:{alert_id}"
+            ).delete(
+                synchronize_session=False
+            )
+            db.commit()
+        finally:
+            db.close()
