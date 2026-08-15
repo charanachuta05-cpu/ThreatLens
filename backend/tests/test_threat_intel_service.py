@@ -513,6 +513,7 @@ async def test_ingestion_rolls_back_indicator_and_alert_on_failure(
         )
 
         def fail_audit_event(
+            db,
             action,
             actor,
             target,

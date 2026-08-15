@@ -197,6 +197,7 @@ async def ingest_threat_intelligence(
             )
 
             audit_event(
+                db=db,
                 action="AUTO_INGEST_INDICATOR",
                 actor="scheduler",
                 target=db_indicator.value,
@@ -289,18 +290,24 @@ def create_indicator(
             db_indicator,
         )
 
-        db.commit()
-        db.refresh(db_indicator)
-
+        # Audit must occur before commit so that
+        # indicator, generated alert, and audit
+        # event are part of the same transaction.
         audit_event(
+            db=db,
             action="CREATE_INDICATOR",
             actor="system",
             target=db_indicator.value,
         )
 
+        db.commit()
+        db.refresh(db_indicator)
+
         return db_indicator
 
-    except SQLAlchemyError:
+    except Exception:
+        # Keep indicator, generated alert, and audit
+        # event transactionally atomic.
         db.rollback()
         raise
 

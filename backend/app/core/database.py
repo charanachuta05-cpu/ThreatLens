@@ -19,6 +19,7 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 import app.models.user
 import app.models.alert
+import app.models.audit
 import app.threat_intel.models
 
 
