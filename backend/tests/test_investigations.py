@@ -1,5 +1,93 @@
+import pytest
 from app.core.security import create_access_token
 from app.models.alert import Alert, AlertSeverity, AlertStatus
+
+from app.core.security import create_access_token
+
+
+def make_role_headers(
+    user_id: int,
+    email: str,
+    role: str,
+):
+    token = create_access_token(
+        data={
+            "sub": str(user_id),
+            "email": email,
+            "role": role,
+        }
+    )
+
+    return {
+        "Authorization": f"Bearer {token}"
+    }
+
+
+@pytest.mark.parametrize(
+    ("user_id", "email", "role", "expected_status"),
+    [
+        (
+            1,
+            "admin@threatlens.com",
+            "admin",
+            200,
+        ),
+        (
+            2,
+            "analyst@threatlens.com",
+            "analyst",
+            200,
+        ),
+        (
+            3,
+            "viewer@threatlens.com",
+            "viewer",
+            403,
+        ),
+    ],
+)
+def test_investigation_rbac_all_roles(
+    client,
+    user_id,
+    email,
+    role,
+    expected_status,
+):
+    delete_test_indicator()
+
+    indicator_id = create_test_indicator()
+
+    try:
+        headers = make_role_headers(
+            user_id=user_id,
+            email=email,
+            role=role,
+        )
+
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=headers,
+        )
+
+        assert response.status_code == expected_status
+
+        if role in {"admin", "analyst"}:
+            data = response.json()
+
+            assert data["indicator"]["id"] == indicator_id
+            assert (
+                data["indicator"]["value"]
+                == TEST_INDICATOR_VALUE
+            )
+
+        elif role == "viewer":
+            data = response.json()
+
+            assert data["success"] is False
+            assert data["error"]["code"] == 403
+
+    finally:
+        delete_test_indicator()
 
 def create_test_alert(
     indicator_id: int,
