@@ -87,6 +87,8 @@ class AlertResponse(BaseModel):
 
     assigned_to: int | None
 
+    indicator_id: int | None
+
     created_at: datetime
 
     updated_at: datetime | None

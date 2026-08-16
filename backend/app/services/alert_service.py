@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
+from app.threat_intel.models import Indicator
 
 from app.models.user import User
 from sqlalchemy import or_
@@ -19,21 +20,43 @@ def create_alert(
     alert_data: AlertCreate,
     created_by: int | None,
     *,
+    indicator_id: int | None = None,
     commit: bool = True,
 ) -> Alert:
     """
     Create a new alert.
 
-    By default, the function commits the transaction for
-    normal API usage.
+    indicator_id is an internal association used by the
+    threat intelligence pipeline. API clients do not supply
+    this value directly.
 
-    When commit=False is supplied, the alert is flushed
-    but the transaction remains open. This allows callers
-    performing multi-step operations to commit or roll back
-    the entire operation atomically.
-
-    WebSocket broadcasting is handled by the API route.
+    When commit=False is used, the alert is flushed but the
+    transaction remains open so callers can perform additional
+    atomic operations such as audit logging.
     """
+
+    # --------------------------------------------------------
+    # Validate indicator relationship
+    # --------------------------------------------------------
+
+    if indicator_id is not None:
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.id == indicator_id,
+            )
+            .first()
+        )
+
+        if indicator is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Threat indicator not found",
+            )
+
+    # --------------------------------------------------------
+    # Create alert
+    # --------------------------------------------------------
 
     alert = Alert(
         title=alert_data.title,
@@ -42,16 +65,21 @@ def create_alert(
         status=AlertStatus.OPEN,
         source=alert_data.source,
         created_by=created_by,
+        indicator_id=indicator_id,
     )
 
     db.add(alert)
 
-    if commit:
-        db.commit()
-        db.refresh(alert)
+    try:
+        if commit:
+            db.commit()
+            db.refresh(alert)
+        else:
+            db.flush()
 
-    else:
-        db.flush()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
     return alert
 
@@ -269,5 +297,26 @@ def get_alert_by_title(
     return (
         db.query(Alert)
         .filter(Alert.title == title)
+        .first()
+    )
+
+def get_alert_by_indicator(
+    db: Session,
+    indicator_id: int,
+) -> Alert | None:
+    """
+    Retrieve an alert directly associated with
+    a specific threat indicator.
+    """
+
+    return (
+        db.query(Alert)
+        .filter(
+            Alert.indicator_id == indicator_id,
+        )
+        .order_by(
+            Alert.created_at.desc(),
+            Alert.id.desc(),
+        )
         .first()
     )

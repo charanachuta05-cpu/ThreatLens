@@ -89,7 +89,16 @@ def investigate_indicator(
     """
     Generate a complete investigation report using
     persisted enrichment results.
+
+    Alert relationships are resolved primarily through
+    Alert.indicator_id. The title/description fallback
+    preserves compatibility with historical alerts that
+    were created before the indicator relationship existed.
     """
+
+    # --------------------------------------------------------
+    # Retrieve indicator
+    # --------------------------------------------------------
 
     indicator = (
         db.query(Indicator)
@@ -104,40 +113,70 @@ def investigate_indicator(
             "Indicator not found.",
         )
 
+    # --------------------------------------------------------
+    # Normalize indicator for correlation
+    # --------------------------------------------------------
+
     current_indicator = _build_threat_indicator(
         indicator,
     )
 
-    # Match the indicator against both alert titles
-    # and descriptions. Indicator values are commonly
-    # present in descriptions rather than titles.
+    # --------------------------------------------------------
+    # Retrieve alerts associated with this indicator.
+    # --------------------------------------------------------
+
+    # indicator_id is the authoritative relationship.
+    # The title/description fallback is retained only for
+    # historical alerts created before indicator_id existed.
+    # --------------------------------------------------------
+
     alerts = (
         db.query(Alert)
         .filter(
             or_(
-                Alert.title.contains(
-                    indicator.value,
-                ),
-                Alert.description.contains(
-                    indicator.value,
-                ),
+                Alert.indicator_id == indicator.id,
+                (
+                    Alert.indicator_id.is_(None)
+                    & (
+                        Alert.title.contains(
+                        indicator.value,
+                    )
+                    | Alert.description.contains(
+                        indicator.value,
+                    )
+                )
             ),
-        )
-        .order_by(
-            Alert.created_at.desc(),
-        )
-        .all()
+        ),
     )
+    .order_by(
+        Alert.created_at.desc(),
+        Alert.id.desc(),
+    )
+    .all()
+)
 
-    # Use the confidence score persisted by the
-    # enrichment pipeline. Do not recalculate it here.
+    # --------------------------------------------------------
+    # Use persisted confidence score
+    #
+    # Do not recalculate confidence during investigation.
+    # This keeps investigation results deterministic.
+    # --------------------------------------------------------
+
     confidence_score = indicator.confidence_score
+
+    # --------------------------------------------------------
+    # Generate recommendation
+    # --------------------------------------------------------
 
     recommendation = generate_recommendation(
         indicator.threat_score,
         confidence_score,
         indicator.severity,
     )
+
+    # --------------------------------------------------------
+    # Correlate related indicators
+    # --------------------------------------------------------
 
     related_indicators: list[RelatedIndicator] = []
 
@@ -170,14 +209,22 @@ def investigate_indicator(
             ),
         )
 
+    # --------------------------------------------------------
     # Highest correlation first.
-    # ID is used as a deterministic tie-breaker.
+    #
+    # ID provides deterministic ordering when scores tie.
+    # --------------------------------------------------------
+
     related_indicators.sort(
         key=lambda item: (
             -item.correlation_score,
             item.id,
         ),
     )
+
+    # --------------------------------------------------------
+    # Build investigation response
+    # --------------------------------------------------------
 
     return InvestigationResponse(
         indicator=InvestigationIndicator(
@@ -200,6 +247,7 @@ def investigate_indicator(
             InvestigationAlert(
                 id=alert.id,
                 title=alert.title,
+                indicator_id=alert.indicator_id,
             )
             for alert in alerts
         ],

@@ -3,12 +3,15 @@ import pytest
 from app.core.database import SessionLocal
 from app.core.security import create_access_token
 from app.threat_intel.models import Indicator
+from app.models.alert import Alert
 
 @pytest.fixture(autouse=True)
 def clean_indicator_test_data():
     """
-    Remove indicator records created by these tests
-    before and after each test.
+    Remove indicator records created by these tests.
+
+    Alerts referencing those indicators must be deleted first
+    because alerts.indicator_id has a foreign-key constraint.
     """
 
     test_values = [
@@ -21,28 +24,49 @@ def clean_indicator_test_data():
         "198.51.100.207",
     ]
 
-    db = SessionLocal()
+    def cleanup():
+        db = SessionLocal()
 
-    try:
-        db.query(Indicator).filter(
-            Indicator.value.in_(test_values)
-        ).delete(
-            synchronize_session=False
-        )
+        try:
+            indicators = (
+                db.query(Indicator)
+                .filter(
+                    Indicator.value.in_(test_values)
+                )
+                .all()
+            )
 
-        db.commit()
+            indicator_ids = [
+                indicator.id
+                for indicator in indicators
+            ]
 
-        yield
+            if indicator_ids:
+                db.query(Alert).filter(
+                    Alert.indicator_id.in_(
+                        indicator_ids
+                    )
+                ).delete(
+                    synchronize_session=False
+                )
 
-    finally:
-        db.query(Indicator).filter(
-            Indicator.value.in_(test_values)
-        ).delete(
-            synchronize_session=False
-        )
+            db.query(Indicator).filter(
+                Indicator.value.in_(test_values)
+            ).delete(
+                synchronize_session=False
+            )
 
-        db.commit()
-        db.close()
+            db.commit()
+
+        finally:
+            db.rollback()
+            db.close()
+
+    cleanup()
+
+    yield
+
+    cleanup()
 
 
 # -------------------------------------------------

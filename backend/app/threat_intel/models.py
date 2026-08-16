@@ -1,6 +1,7 @@
 from enum import Enum
 
 from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -86,4 +87,10 @@ class Indicator(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+    # Alerts generated from this indicator.
+    alerts = relationship(
+        "Alert",
+        back_populates="indicator",
     )

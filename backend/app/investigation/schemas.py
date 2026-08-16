@@ -54,6 +54,7 @@ class RelatedIndicator(BaseModel):
 class InvestigationAlert(BaseModel):
     id: int
     title: str
+    indicator_id: int | None = None
 
 
 class InvestigationResponse(BaseModel):

@@ -7,7 +7,7 @@ from app.models.user import User
 from app.schemas.alert import AlertCreate
 from app.services.alert_service import (
     create_alert,
-    get_alert_by_title,
+    get_alert_by_indicator,
 )
 from app.threat_intel.enrichment import enrich_indicator
 from app.threat_intel.enrichment_service import (
@@ -45,12 +45,19 @@ def generate_alert_for_indicator(
     indicator: Indicator,
 ):
     """
-    Automatically generate alerts for
-    HIGH and CRITICAL indicators.
+    Automatically generate an alert for HIGH and CRITICAL
+    indicators.
 
-    The alert source always reflects the
-    original indicator source.
+    The generated alert maintains a direct relationship with
+    the source Indicator.
+
+    Duplicate detection is performed using indicator_id rather
+    than alert title, making the relationship authoritative.
     """
+
+    # --------------------------------------------------------
+    # Only HIGH and CRITICAL indicators generate alerts.
+    # --------------------------------------------------------
 
     if indicator.severity not in {
         "HIGH",
@@ -58,26 +65,52 @@ def generate_alert_for_indicator(
     }:
         return None
 
-    title = (
-        f"Threat Indicator: {indicator.value}"
+    # --------------------------------------------------------
+    # Prevent duplicate alerts for the same indicator.
+    # --------------------------------------------------------
+
+    existing_alert = get_alert_by_indicator(
+        db,
+        indicator.id,
     )
 
-    if get_alert_by_title(
-        db,
-        title,
-    ):
+    if existing_alert is not None:
         return None
+
+    # --------------------------------------------------------
+    # Find an administrator to own the generated alert.
+    # --------------------------------------------------------
 
     admin = (
         db.query(User)
         .filter(
-            User.role == "admin"
+            User.role == "admin",
+            User.is_active.is_(True),
+        )
+        .order_by(
+            User.id.asc(),
         )
         .first()
     )
 
+    if admin is None:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to generate threat alert: "
+                "no active administrator exists."
+            ),
+        )
+
+    # --------------------------------------------------------
+    # Build alert payload.
+    # --------------------------------------------------------
+
     alert_data = AlertCreate(
-        title=title,
+        title=(
+            f"Threat Indicator: "
+            f"{indicator.value}"
+        ),
         description=(
             indicator.description
             or (
@@ -90,14 +123,15 @@ def generate_alert_for_indicator(
         source=indicator.source,
     )
 
+    # --------------------------------------------------------
+    # Keep alert creation inside the caller's transaction.
+    # --------------------------------------------------------
+
     return create_alert(
         db=db,
         alert_data=alert_data,
-        created_by=(
-            admin.id
-            if admin
-            else None
-        ),
+        created_by=admin.id,
+        indicator_id=indicator.id,
         commit=False,
     )
 
