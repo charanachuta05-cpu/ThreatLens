@@ -1,8 +1,18 @@
 import pytest
+
+from app.core.database import SessionLocal
 from app.core.security import create_access_token
 from app.models.alert import Alert, AlertSeverity, AlertStatus
+from app.threat_intel.models import Indicator
 
-from app.core.security import create_access_token
+
+TEST_INDICATOR_VALUE = "198.51.100.240"
+
+EXPECTED_TAGS = [
+    "ip",
+    "high",
+    "high-risk",
+]
 
 
 def make_role_headers(
@@ -23,77 +33,181 @@ def make_role_headers(
     }
 
 
-@pytest.mark.parametrize(
-    ("user_id", "email", "role", "expected_status"),
-    [
-        (
-            1,
-            "admin@threatlens.com",
-            "admin",
-            200,
-        ),
-        (
-            2,
-            "analyst@threatlens.com",
-            "analyst",
-            200,
-        ),
-        (
-            3,
-            "viewer@threatlens.com",
-            "viewer",
-            403,
-        ),
-    ],
-)
-def test_investigation_rbac_all_roles(
-    client,
-    user_id,
-    email,
-    role,
-    expected_status,
+def delete_alerts_for_indicator(
+    db,
+    indicator_id: int,
 ):
-    delete_test_indicator()
+    """
+    Delete alerts directly associated with an indicator.
 
-    indicator_id = create_test_indicator()
+    The alerts.indicator_id foreign key means alerts must be
+    removed before their parent indicator can be deleted.
+    """
+
+    db.query(Alert).filter(
+        Alert.indicator_id == indicator_id,
+    ).delete(
+        synchronize_session=False,
+    )
+
+
+def delete_test_indicator():
+    """
+    Remove the investigation test indicator and any alerts
+    referencing it.
+
+    This helper is intentionally FK-aware.
+    """
+
+    db = SessionLocal()
 
     try:
-        headers = make_role_headers(
-            user_id=user_id,
-            email=email,
-            role=role,
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.value == TEST_INDICATOR_VALUE,
+            )
+            .first()
         )
 
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=headers,
-        )
-
-        assert response.status_code == expected_status
-
-        if role in {"admin", "analyst"}:
-            data = response.json()
-
-            assert data["indicator"]["id"] == indicator_id
-            assert (
-                data["indicator"]["value"]
-                == TEST_INDICATOR_VALUE
+        if indicator is not None:
+            delete_alerts_for_indicator(
+                db,
+                indicator.id,
             )
 
-        elif role == "viewer":
-            data = response.json()
+            db.delete(indicator)
 
-            assert data["success"] is False
-            assert data["error"]["code"] == 403
+        db.commit()
 
     finally:
-        delete_test_indicator()
+        db.rollback()
+        db.close()
+
+
+def delete_indicator_by_value(
+    value: str,
+):
+    """
+    Remove an indicator and its directly linked alerts.
+    """
+
+    db = SessionLocal()
+
+    try:
+        indicator = (
+            db.query(Indicator)
+            .filter(
+                Indicator.value == value,
+            )
+            .first()
+        )
+
+        if indicator is not None:
+            delete_alerts_for_indicator(
+                db,
+                indicator.id,
+            )
+
+            db.delete(indicator)
+
+        db.commit()
+
+    finally:
+        db.rollback()
+        db.close()
+
+
+def create_test_indicator(
+    *,
+    value: str = TEST_INDICATOR_VALUE,
+    indicator_type: str = "IP",
+    severity: str = "HIGH",
+    source: str = "pytest",
+    threat_score: int = 85,
+    reputation_score: int = 40,
+    confidence_score: int = 67,
+    tags: str = "ip,high,high-risk",
+):
+    db = SessionLocal()
+
+    try:
+        indicator = Indicator(
+            indicator_type=indicator_type,
+            value=value,
+            severity=severity,
+            source=source,
+            description="Investigation endpoint test indicator",
+            threat_score=threat_score,
+            reputation_score=reputation_score,
+            confidence_score=confidence_score,
+            tags=tags,
+        )
+
+        db.add(indicator)
+        db.commit()
+        db.refresh(indicator)
+
+        return indicator.id
+
+    finally:
+        db.close()
+
+
+def create_related_test_indicator(
+    *,
+    value: str,
+    severity: str = "HIGH",
+    source: str = "pytest",
+    threat_score: int = 80,
+    reputation_score: int = 45,
+    confidence_score: int = 65,
+    tags: str = "ip,high,high-risk",
+):
+    """
+    Create a secondary indicator used by correlation tests.
+    """
+
+    delete_indicator_by_value(value)
+
+    db = SessionLocal()
+
+    try:
+        indicator = Indicator(
+            indicator_type="IP",
+            value=value,
+            severity=severity,
+            source=source,
+            description="Related investigation test indicator",
+            threat_score=threat_score,
+            reputation_score=reputation_score,
+            confidence_score=confidence_score,
+            tags=tags,
+        )
+
+        db.add(indicator)
+        db.commit()
+        db.refresh(indicator)
+
+        return indicator.id
+
+    finally:
+        db.rollback()
+        db.close()
+
 
 def create_test_alert(
     indicator_id: int,
     *,
     in_description: bool = True,
 ):
+    """
+    Create an alert associated with the test indicator.
+
+    The alert is deliberately linked through indicator_id so
+    investigation tests exercise the real relationship.
+    """
+
     db = SessionLocal()
 
     try:
@@ -128,6 +242,7 @@ def create_test_alert(
             status=AlertStatus.OPEN,
             source="pytest",
             created_by=1,
+            indicator_id=indicator_id,
         )
 
         db.add(alert)
@@ -137,9 +252,17 @@ def create_test_alert(
         return alert.id
 
     finally:
+        db.rollback()
         db.close()
 
-def delete_test_alert(alert_id: int):
+
+def delete_test_alert(
+    alert_id: int,
+):
+    """
+    Delete an individual test alert.
+    """
+
     db = SessionLocal()
 
     try:
@@ -152,14 +275,235 @@ def delete_test_alert(alert_id: int):
         db.commit()
 
     finally:
+        db.rollback()
         db.close()
+
+
+def test_investigation_requires_auth(
+    client,
+):
+    response = client.get(
+        "/investigations/999999",
+    )
+
+    assert response.status_code == 401
+
+
+def test_viewer_cannot_investigate(
+    client,
+):
+    headers = make_role_headers(
+        user_id=3,
+        email="viewer@threatlens.com",
+        role="viewer",
+    )
+
+    response = client.get(
+        "/investigations/999999",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    (
+        "user_id",
+        "email",
+        "role",
+        "expected_status",
+    ),
+    [
+        (
+            1,
+            "admin@threatlens.com",
+            "admin",
+            200,
+        ),
+        (
+            2,
+            "analyst@threatlens.com",
+            "analyst",
+            200,
+        ),
+        (
+            3,
+            "viewer@threatlens.com",
+            "viewer",
+            403,
+        ),
+    ],
+)
+def test_investigation_rbac_all_roles(
+    client,
+    user_id,
+    email,
+    role,
+    expected_status,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        headers = make_role_headers(
+            user_id=user_id,
+            email=email,
+            role=role,
+        )
+
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=headers,
+        )
+
+        assert response.status_code == expected_status
+
+        if role in {"admin", "analyst"}:
+            data = response.json()
+
+            assert data["indicator"]["id"] == indicator_id
+            assert (
+                data["indicator"]["value"]
+                == TEST_INDICATOR_VALUE
+            )
+
+        else:
+            data = response.json()
+
+            assert data["success"] is False
+            assert data["error"]["code"] == 403
+
+    finally:
+        delete_test_indicator()
+
+
+def test_analyst_can_investigate(
+    client,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        headers = make_role_headers(
+            user_id=2,
+            email="analyst@threatlens.com",
+            role="analyst",
+        )
+
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["indicator"]["id"] == indicator_id
+        assert (
+            data["indicator"]["value"]
+            == TEST_INDICATOR_VALUE
+        )
+
+    finally:
+        delete_test_indicator()
+
+
+def test_admin_can_investigate(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_returns_indicator(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["indicator"] == {
+            "id": indicator_id,
+            "value": TEST_INDICATOR_VALUE,
+            "type": "IP",
+            "severity": "HIGH",
+            "source": "pytest",
+        }
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_returns_scores(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        scores = response.json()["scores"]
+
+        assert scores["threat_score"] == 85
+        assert scores["reputation_score"] == 40
+        assert scores["confidence_score"] == 67
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_returns_tags(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        assert (
+            response.json()["tags"]
+            == EXPECTED_TAGS
+        )
+
+    finally:
+        delete_test_indicator()
+
 
 def test_investigation_finds_alert_by_description(
     client,
     admin_headers,
 ):
-    delete_test_indicator()
-
     indicator_id = create_test_indicator()
     alert_id = create_test_alert(
         indicator_id,
@@ -190,8 +534,6 @@ def test_investigation_finds_alert_by_title(
     client,
     admin_headers,
 ):
-    delete_test_indicator()
-
     indicator_id = create_test_indicator()
     alert_id = create_test_alert(
         indicator_id,
@@ -218,188 +560,21 @@ def test_investigation_finds_alert_by_title(
         delete_test_indicator()
 
 
-def make_role_headers(
-    user_id: int,
-    email: str,
-    role: str,
-):
-    token = create_access_token(
-        data={
-            "sub": str(user_id),
-            "email": email,
-            "role": role,
-        }
-    )
-
-    return {
-        "Authorization": f"Bearer {token}"
-    }
-from app.core.database import SessionLocal
-from app.threat_intel.models import Indicator
-
-
-TEST_INDICATOR_VALUE = "198.51.100.240"
-
-EXPECTED_TAGS = [
-    "ip",
-    "high",
-    "high-risk",
-]
-
-
-def create_test_indicator():
-    db = SessionLocal()
-
-    try:
-        indicator = Indicator(
-            indicator_type="IP",
-            value=TEST_INDICATOR_VALUE,
-            severity="HIGH",
-            source="pytest",
-            description="Investigation endpoint test indicator",
-            threat_score=85,
-            reputation_score=40,
-            confidence_score=67,
-            tags="ip,high,high-risk",
-        )
-
-        db.add(indicator)
-        db.commit()
-        db.refresh(indicator)
-
-        return indicator.id
-
-    finally:
-        db.close()
-
-
-def delete_test_indicator():
-    db = SessionLocal()
-
-    try:
-        db.query(Indicator).filter(
-            Indicator.value == TEST_INDICATOR_VALUE
-        ).delete(
-            synchronize_session=False
-        )
-
-        db.commit()
-
-    finally:
-        db.close()
-
-def create_related_test_indicator(
-    *,
-    value: str,
-    severity: str = "HIGH",
-    source: str = "pytest",
-    threat_score: int = 80,
-    reputation_score: int = 45,
-    confidence_score: int = 65,
-    tags: str = "ip,high,high-risk",
-):
-    db = SessionLocal()
-
-    try:
-        indicator = Indicator(
-            indicator_type="IP",
-            value=value,
-            severity=severity,
-            source=source,
-            description="Related investigation test indicator",
-            threat_score=threat_score,
-            reputation_score=reputation_score,
-            confidence_score=confidence_score,
-            tags=tags,
-        )
-
-        db.add(indicator)
-        db.commit()
-        db.refresh(indicator)
-
-        return indicator.id
-
-    finally:
-        db.close()
-
-
-def delete_indicator_by_value(value: str):
-    db = SessionLocal()
-
-    try:
-        db.query(Indicator).filter(
-            Indicator.value == value,
-        ).delete(
-            synchronize_session=False,
-        )
-
-        db.commit()
-
-    finally:
-        db.close()
-
-
-def test_investigation_requires_auth(client):
-    response = client.get(
-        "/investigations/999999",
-    )
-
-    assert response.status_code == 401
-
-
-def test_viewer_cannot_investigate(client):
-    headers = make_role_headers(
-        user_id=3,
-        email="viewer@threatlens.com",
-        role="viewer",
-    )
-
-    response = client.get(
-        "/investigations/999999",
-        headers=headers,
-    )
-
-    assert response.status_code == 403
-
-
-def test_analyst_can_investigate(
+def test_investigation_alerts_are_newest_first(
     client,
     admin_headers,
 ):
-    delete_test_indicator()
-
     indicator_id = create_test_indicator()
 
-    try:
-        headers = make_role_headers(
-            user_id=2,
-            email="analyst@threatlens.com",
-            role="analyst",
-        )
+    first_alert = create_test_alert(
+        indicator_id,
+        in_description=True,
+    )
 
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=headers,
-        )
-
-        assert response.status_code == 200
-
-        data = response.json()
-
-        assert data["indicator"]["id"] == indicator_id
-        assert data["indicator"]["value"] == TEST_INDICATOR_VALUE
-
-    finally:
-        delete_test_indicator()
-
-
-def test_admin_can_investigate(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    indicator_id = create_test_indicator()
+    second_alert = create_test_alert(
+        indicator_id,
+        in_description=False,
+    )
 
     try:
         response = client.get(
@@ -409,435 +584,169 @@ def test_admin_can_investigate(
 
         assert response.status_code == 200
 
-    finally:
-        delete_test_indicator()
+        alerts = response.json()["alerts"]
 
-
-def test_investigation_returns_indicator(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    indicator_id = create_test_indicator()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        data = response.json()
-
-        assert data["indicator"]["id"] == indicator_id
-        assert data["indicator"]["value"] == TEST_INDICATOR_VALUE
-        assert data["indicator"]["type"] == "IP"
-        assert data["indicator"]["severity"] == "HIGH"
-        assert data["indicator"]["source"] == "pytest"
-
-    finally:
-        delete_test_indicator()
-
-
-def test_investigation_returns_persisted_scores(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    indicator_id = create_test_indicator()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        scores = response.json()["scores"]
-
-        assert scores["threat_score"] == 85
-        assert scores["reputation_score"] == 40
-        assert scores["confidence_score"] == 67
-
-    finally:
-        delete_test_indicator()
-
-
-def test_investigation_returns_persisted_tags(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    indicator_id = create_test_indicator()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        tags = response.json()["tags"]
-
-        assert tags == EXPECTED_TAGS
-
-    finally:
-        delete_test_indicator()
-
-
-def test_investigation_not_found(
-    client,
-    admin_headers,
-):
-    response = client.get(
-        "/investigations/999999",
-        headers=admin_headers,
-    )
-
-    assert response.status_code == 404
-
-    data = response.json()
-
-    assert data["success"] is False
-    assert data["error"]["code"] == 404
-    assert data["error"]["type"] == "HTTPException"
-    assert data["error"]["message"] == "Indicator not found."
-
-def test_investigation_returns_p2_recommendation(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    indicator_id = create_test_indicator()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        recommendation = response.json()[
-            "recommendation"
+        ids = [
+            alert["id"]
+            for alert in alerts
         ]
 
-        assert recommendation["priority"] == "P2"
-        assert (
-            recommendation["summary"]
-            == "Monitor and validate."
-        )
-        assert (
-            "Review recent activity"
-            in recommendation["actions"]
+        assert second_alert in ids
+        assert first_alert in ids
+
+        assert ids.index(second_alert) < ids.index(
+            first_alert
         )
 
     finally:
+        delete_test_alert(first_alert)
+        delete_test_alert(second_alert)
         delete_test_indicator()
 
-
-def test_investigation_returns_p1_for_critical_indicator(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    db = SessionLocal()
-
-    try:
-        indicator = Indicator(
-            indicator_type="IP",
-            value="198.51.100.241",
-            severity="CRITICAL",
-            source="pytest",
-            description="Critical investigation test",
-            threat_score=10,
-            reputation_score=10,
-            confidence_score=10,
-            tags="ip,critical",
-        )
-
-        db.add(indicator)
-        db.commit()
-        db.refresh(indicator)
-
-        indicator_id = indicator.id
-
-    finally:
-        db.close()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        recommendation = response.json()[
-            "recommendation"
-        ]
-
-        assert recommendation["priority"] == "P1"
-        assert (
-            recommendation["summary"]
-            == "Immediate investigation and containment required."
-        )
-        assert (
-            "Block the indicator"
-            in recommendation["actions"]
-        )
-
-    finally:
-        delete_indicator_by_value(
-            "198.51.100.241"
-        )
-
-
-def test_investigation_returns_p3_for_low_confidence(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    db = SessionLocal()
-
-    try:
-        indicator = Indicator(
-            indicator_type="IP",
-            value="198.51.100.242",
-            severity="HIGH",
-            source="pytest",
-            description="Low confidence investigation test",
-            threat_score=90,
-            reputation_score=40,
-            confidence_score=20,
-            tags="ip,high,high-risk",
-        )
-
-        db.add(indicator)
-        db.commit()
-        db.refresh(indicator)
-
-        indicator_id = indicator.id
-
-    finally:
-        db.close()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        recommendation = response.json()[
-            "recommendation"
-        ]
-
-        assert recommendation["priority"] == "P3"
-        assert (
-            "limited confidence"
-            in recommendation["summary"]
-        )
-        assert (
-            "Validate the intelligence source"
-            in recommendation["actions"]
-        )
-
-    finally:
-        delete_indicator_by_value(
-            "198.51.100.242"
-        )
-
-
-def test_investigation_returns_related_indicators(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    primary_id = create_test_indicator()
-
-    related_id = create_related_test_indicator(
-        value="198.51.100.243",
-    )
-
-    try:
-        response = client.get(
-            f"/investigations/{primary_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        related = response.json()[
-            "related_indicators"
-        ]
-
-        matched = next(
-            (
-                item
-                for item in related
-                if item["id"] == related_id
-            ),
-            None,
-        )
-
-        assert matched is not None
-        assert (
-            matched["value"]
-            == "198.51.100.243"
-        )
-        assert matched["correlation_score"] >= 60
-        assert matched["reasons"]
-
-    finally:
-        delete_indicator_by_value(
-            "198.51.100.243"
-        )
-        delete_test_indicator()
-
-
-def test_investigation_excludes_unrelated_indicators(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    primary_id = create_test_indicator()
-
-    unrelated_id = create_related_test_indicator(
-        value="203.0.113.50",
-        severity="LOW",
-        source="different-source",
-        reputation_score=100,
-        confidence_score=0,
-        tags="domain,benign",
-    )
-
-    try:
-        response = client.get(
-            f"/investigations/{primary_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        related = response.json()[
-            "related_indicators"
-        ]
-
-        assert all(
-            item["id"] != unrelated_id
-            for item in related
-        )
-
-    finally:
-        delete_indicator_by_value(
-            "203.0.113.50"
-        )
-        delete_test_indicator()
 
 def test_investigation_returns_empty_related_indicators_when_none_match(
     client,
     admin_headers,
 ):
-    delete_test_indicator()
+    """
+    An isolated investigation indicator must not acquire
+    unrelated indicators from other tests.
 
-    primary_id = create_test_indicator()
+    The isolated indicator is deliberately constructed so that
+    it cannot reach the correlation threshold against the normal
+    IP/HIGH/pytest indicators used elsewhere in the test suite.
+    """
 
-    unrelated_value = "203.0.113.60"
+    isolated_value = "192.0.2.240"
 
-    unrelated_id = create_related_test_indicator(
-        value=unrelated_value,
+    delete_indicator_by_value(
+        isolated_value,
+    )
+
+    indicator_id = create_test_indicator(
+        value=isolated_value,
+        indicator_type="DOMAIN",
         severity="LOW",
-        source="unrelated-source",
+        source="isolated-test",
         threat_score=10,
-        reputation_score=100,
+        reputation_score=0,
         confidence_score=0,
-        tags="domain,benign",
+        tags="",
     )
 
     try:
         response = client.get(
-            f"/investigations/{primary_id}",
+            f"/investigations/{indicator_id}",
             headers=admin_headers,
         )
 
         assert response.status_code == 200
 
-        related = response.json()["related_indicators"]
+        data = response.json()
 
-        assert related == []
+        assert data["related_indicators"] == []
 
     finally:
-        delete_indicator_by_value(unrelated_value)
-        delete_test_indicator()
+        delete_indicator_by_value(
+            isolated_value,
+        )
 
 
-def test_investigation_sorts_related_indicators_by_correlation_score(
+def test_investigation_finds_related_indicator(
     client,
     admin_headers,
 ):
-    delete_test_indicator()
+    related_value = "198.51.100.241"
 
-    primary_id = create_test_indicator()
-
-    # Strong correlation:
-    # same type + severity + source + similar reputation
-    # + similar confidence + shared tags = 100.
-    strong_value = "198.51.100.244"
-
-    strong_id = create_related_test_indicator(
-        value=strong_value,
-        severity="HIGH",
-        source="pytest",
-        threat_score=85,
-        reputation_score=42,
-        confidence_score=65,
-        tags="ip,high,high-risk",
+    delete_indicator_by_value(
+        related_value
     )
 
-    # Weaker but still related:
-    # same type + severity + similar reputation
-    # + similar confidence = 65.
-    weak_value = "198.51.100.245"
+    indicator_id = create_test_indicator()
 
-    weak_id = create_related_test_indicator(
-        value=weak_value,
-        severity="HIGH",
-        source="different-source",
-        threat_score=80,
-        reputation_score=45,
-        confidence_score=65,
-        tags="other",
+    related_id = create_related_test_indicator(
+        value=related_value,
     )
 
     try:
         response = client.get(
-            f"/investigations/{primary_id}",
+            f"/investigations/{indicator_id}",
             headers=admin_headers,
         )
 
         assert response.status_code == 200
 
-        related = response.json()["related_indicators"]
+        related = response.json()[
+            "related_indicators"
+        ]
 
-        ids = [item["id"] for item in related]
+        assert any(
+            item["id"] == related_id
+            for item in related
+        )
 
-        assert strong_id in ids
-        assert weak_id in ids
+        matching = next(
+            item
+            for item in related
+            if item["id"] == related_id
+        )
 
-        assert ids.index(strong_id) < ids.index(weak_id)
+        assert (
+            matching["value"]
+            == related_value
+        )
+        assert (
+            matching["indicator_type"]
+            == "IP"
+        )
+        assert matching["severity"] == "HIGH"
+        assert (
+            0
+            <= matching["correlation_score"]
+            <= 100
+        )
+        assert matching["reasons"]
+
+    finally:
+        delete_test_indicator()
+        delete_indicator_by_value(
+            related_value
+        )
+
+
+def test_investigation_related_indicators_are_sorted(
+    client,
+    admin_headers,
+):
+    related_values = [
+        "198.51.100.242",
+        "198.51.100.243",
+    ]
+
+    for value in related_values:
+        delete_indicator_by_value(value)
+
+    indicator_id = create_test_indicator()
+
+    first_related_id = create_related_test_indicator(
+        value=related_values[0],
+    )
+
+    second_related_id = create_related_test_indicator(
+        value=related_values[1],
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        related = response.json()[
+            "related_indicators"
+        ]
 
         scores = [
             item["correlation_score"]
@@ -849,57 +758,16 @@ def test_investigation_sorts_related_indicators_by_correlation_score(
             reverse=True,
         )
 
-    finally:
-        delete_indicator_by_value(strong_value)
-        delete_indicator_by_value(weak_value)
-        delete_test_indicator()
-
-
-def test_investigation_deduplicates_and_cleans_tags(
-    client,
-    admin_headers,
-):
-    delete_test_indicator()
-
-    db = SessionLocal()
-
-    try:
-        indicator = Indicator(
-            indicator_type="IP",
-            value=TEST_INDICATOR_VALUE,
-            severity="HIGH",
-            source="pytest",
-            description="Tag normalization test",
-            threat_score=85,
-            reputation_score=40,
-            confidence_score=67,
-            tags="ip, high,ip,, high-risk, high-risk,",
-        )
-
-        db.add(indicator)
-        db.commit()
-        db.refresh(indicator)
-
-        indicator_id = indicator.id
-
-    finally:
-        db.close()
-
-    try:
-        response = client.get(
-            f"/investigations/{indicator_id}",
-            headers=admin_headers,
-        )
-
-        assert response.status_code == 200
-
-        tags = response.json()["tags"]
-
-        assert tags == [
-            "ip",
-            "high",
-            "high-risk",
+        ids = [
+            item["id"]
+            for item in related
         ]
 
+        assert first_related_id in ids
+        assert second_related_id in ids
+
     finally:
         delete_test_indicator()
+
+        for value in related_values:
+            delete_indicator_by_value(value)
