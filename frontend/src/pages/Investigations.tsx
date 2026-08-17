@@ -30,6 +30,7 @@ interface InvestigationView {
   threat_score: number;
   reputation_score: number;
   confidence_score: number;
+  explanation: Investigation["explanation"];
   tags: string[];
   related_indicators: Investigation["related_indicators"];
   alerts: Investigation["alerts"];
@@ -177,6 +178,8 @@ function Investigations() {
           Number(
             scores?.confidence_score ?? 0,
           ),
+
+        explanation: data.explanation,
 
         tags:
           Array.isArray(data?.tags)
@@ -558,6 +561,115 @@ function Investigations() {
                     <small>
                       Intelligence confidence
                     </small>
+                  </div>
+                </div>
+
+                <div className="investigation-card">
+                  <div className="investigation-card-header">
+                    <h3>
+                      Enrichment Explanation
+                    </h3>
+
+                    <span>
+                      Deterministic analysis
+                    </span>
+                  </div>
+
+                  <div className="investigation-explanation">
+                    <div className="investigation-explanation-section">
+                      <div className="investigation-explanation-title">
+                        <strong>Threat Score</strong>
+
+                        <span>
+                          {investigation.explanation.threat_score.value}/100
+                        </span>
+                      </div>
+
+                      <ul className="investigation-explanation-reasons">
+                        {investigation.explanation.threat_score.reasons.map(
+                          (reason) => (
+                            <li key={reason}>
+                              {reason}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="investigation-explanation-section">
+                      <div className="investigation-explanation-title">
+                        <strong>Reputation Score</strong>
+
+                        <span>
+                          {investigation.explanation.reputation_score.value}/100
+                        </span>
+                      </div>
+
+                      <ul className="investigation-explanation-reasons">
+                        {investigation.explanation.reputation_score.reasons.map(
+                          (reason) => (
+                            <li key={reason}>
+                              {reason}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="investigation-explanation-section">
+                      <div className="investigation-explanation-title">
+                        <strong>Confidence Score</strong>
+
+                        <span>
+                          {investigation.explanation.confidence_score.value}/100
+                        </span>
+                      </div>
+
+                      <ul className="investigation-explanation-reasons">
+                        {investigation.explanation.confidence_score.reasons.map(
+                          (reason) => (
+                            <li key={reason}>
+                              {reason}
+                            </li>
+                          ),
+                        )}
+                      </ul>
+                    </div>
+
+                    {Object.keys(
+                      investigation.explanation.tag_reasons,
+                    ).length > 0 && (
+                      <div className="investigation-explanation-section">
+                        <div className="investigation-explanation-title">
+                          <strong>Tag Reasoning</strong>
+
+                          <span>
+                            {
+                              Object.keys(
+                                investigation.explanation.tag_reasons,
+                              ).length
+                            } reasons
+                          </span>
+                        </div>
+
+                        <div className="investigation-tag-reasons">
+                          {Object.entries(
+                            investigation.explanation.tag_reasons,
+                          ).map(
+                            ([tag, reason]) => (
+                              <div
+                                key={tag}
+                                className="investigation-tag-reason"
+                              >
+                                <span>{tag}</span>
+
+                                <p>{reason}</p>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

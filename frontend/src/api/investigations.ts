@@ -14,6 +14,18 @@ export interface InvestigationScores {
   confidence_score: number;
 }
 
+export interface ScoreExplanation {
+  value: number;
+  reasons: string[];
+}
+
+export interface EnrichmentExplanation {
+  threat_score: ScoreExplanation;
+  reputation_score: ScoreExplanation;
+  confidence_score: ScoreExplanation;
+  tag_reasons: Record<string, string>;
+}
+
 export interface InvestigationAlert {
   id: number;
   title: string;
@@ -38,6 +50,7 @@ export interface InvestigationRecommendation {
 export interface Investigation {
   indicator: InvestigationIndicator;
   scores: InvestigationScores;
+  explanation: EnrichmentExplanation;
   tags: string[];
   related_indicators: RelatedIndicator[];
   alerts: InvestigationAlert[];
