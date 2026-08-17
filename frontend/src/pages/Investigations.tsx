@@ -47,83 +47,55 @@ interface InvestigationView {
   recommendation: Investigation["recommendation"];
 }
 
-function getApiErrorMessage(
-  error: unknown,
-): string {
-  if (!axios.isAxiosError(error)) {
-    return "Unable to load investigation data.";
-  }
-
-  switch (error.response?.status) {
-    case 401:
-      return "Your session has expired. Please log in again.";
-
-    case 403:
-      return "You do not have permission to investigate indicators.";
-
-    case 404:
-      return "Indicator not found.";
-
-    case 422:
-      return "Invalid investigation request.";
-
-    default:
-      return "Unable to load investigation data.";
-  }
-}
-
-function getIndicatorLoadError(
-  error: unknown,
-): string {
-  if (!axios.isAxiosError(error)) {
-    return "Unable to load indicators.";
-  }
-
-  switch (error.response?.status) {
-    case 401:
-      return "Your session has expired. Please log in again.";
-
-    case 403:
-      return "You do not have permission to view indicators.";
-
-    case 404:
-      return "Indicator endpoint was not found.";
-
-    case 422:
-      return "Invalid indicator request.";
-
-    default:
-      return "Unable to load indicators.";
-  }
-}
-
 function safeSeverity(
-  severity:
-    | string
-    | null
-    | undefined,
+  severity: string | null | undefined,
 ): string {
   return (
     severity
       ?.toString()
       .trim()
-      .toLowerCase() ||
-    "unknown"
+      .toLowerCase() || "unknown"
   );
 }
 
+function getErrorMessage(
+  error: unknown,
+  fallback: string,
+  forbidden: string,
+  notFound?: string,
+): string {
+  if (!axios.isAxiosError(error)) {
+    console.error(fallback, error);
+    return fallback;
+  }
+
+  const status = error.response?.status;
+
+  if (status === 401) {
+    return "Your session has expired. Please log in again.";
+  }
+
+  if (status === 403) {
+    return forbidden;
+  }
+
+  if (status === 404 && notFound) {
+    return notFound;
+  }
+
+  console.error(fallback, error);
+
+  return fallback;
+}
+
 function renderRecommendation(
-  recommendation:
-    | InvestigationView["recommendation"],
+  recommendation: InvestigationView["recommendation"],
 ): string {
   if (!recommendation) {
     return "No recommendation available.";
   }
 
-  if (
-    typeof recommendation ===
-    "string"
-  ) {
+  if (typeof recommendation === "string") {
     return recommendation;
   }
 
@@ -131,6 +103,78 @@ function renderRecommendation(
     recommendation.summary ||
     "No recommendation available."
   );
+}
+
+function normalizeInvestigation(
+  data: Investigation,
+  indicatorId: number,
+  selectedIndicator?: Indicator,
+): InvestigationView {
+  const backendIndicator = data?.indicator;
+  const scores = data?.scores;
+
+  return {
+    indicator_id:
+      backendIndicator?.id ??
+      indicatorId,
+
+    indicator_type:
+      backendIndicator?.type ??
+      selectedIndicator?.indicator_type ??
+      "UNKNOWN",
+
+    value:
+      backendIndicator?.value ??
+      selectedIndicator?.value ??
+      "Unknown indicator",
+
+    severity:
+      backendIndicator?.severity ??
+      selectedIndicator?.severity ??
+      "UNKNOWN",
+
+    source:
+      backendIndicator?.source ??
+      selectedIndicator?.source ??
+      null,
+
+    description:
+      selectedIndicator?.description ??
+      null,
+
+    threat_score: Number(
+      scores?.threat_score ?? 0,
+    ),
+
+    reputation_score: Number(
+      scores?.reputation_score ?? 0,
+    ),
+
+    confidence_score: Number(
+      scores?.confidence_score ?? 0,
+    ),
+
+    explanation: data.explanation,
+
+    tags: Array.isArray(data?.tags)
+      ? data.tags
+      : [],
+
+    related_indicators:
+      Array.isArray(
+        data?.related_indicators,
+      )
+        ? data.related_indicators
+        : [],
+
+    alerts: Array.isArray(data?.alerts)
+      ? data.alerts
+      : [],
+
+    recommendation:
+      data?.recommendation ??
+      "No recommendation available.",
+  };
 }
 
 function Investigations() {
@@ -161,24 +205,16 @@ function Investigations() {
     useState("");
 
   /*
-   * =========================================
-   * URL STATE
-   *
-   * Supported URL:
-   *
-   * /investigations?indicator=42
-   *
-   * No state is mutated directly from this
-   * calculation. This keeps the URL validation
-   * deterministic and ESLint-friendly.
-   * =========================================
+   * ========================================================
+   * URL PARAMETER
+   * ========================================================
    */
 
   const indicatorParam =
     searchParams.get("indicator");
 
   const requestedIndicatorId =
-    indicatorParam
+    indicatorParam !== null
       ? Number(indicatorParam)
       : null;
 
@@ -191,122 +227,70 @@ function Investigations() {
       requestedIndicatorId < 1
     );
 
-  const requestedIndicator =
-    requestedIndicatorId !== null
-      ? indicators.find(
-          (indicator) =>
-            indicator.id ===
-            requestedIndicatorId,
-        )
-      : undefined;
-
-  const requestedIndicatorExists =
-    requestedIndicator !== undefined;
-
-  const urlError =
-    !loadingIndicators &&
-    indicatorParam
-      ? invalidIndicatorParam
-        ? "Invalid investigation indicator."
-        : !requestedIndicatorExists
-          ? "The requested indicator is not available."
-          : ""
-      : "";
-
   /*
-   * =========================================
+   * ========================================================
    * LOAD INDICATORS
-   *
-   * The asynchronous work is scheduled after
-   * the effect begins so React's
-   * set-state-in-effect rule is satisfied.
-   * =========================================
+   * ========================================================
    */
 
   useEffect(() => {
     let cancelled = false;
 
-    const timer =
-      window.setTimeout(() => {
-        async function loadIndicators() {
-          try {
-            const data =
-              await getIndicators({
-                skip: 0,
-                limit: 50,
-              });
+    async function loadIndicators() {
+      try {
+        setLoadingIndicators(true);
+        setError("");
 
-            if (cancelled) {
-              return;
-            }
+        const data = await getIndicators({
+          skip: 0,
+          limit: 50,
+        });
 
-            setIndicators(data);
-            setError("");
-          } catch (err) {
-            if (cancelled) {
-              return;
-            }
-
-            console.error(
-              "Failed to load investigation indicators:",
-              err,
-            );
-
-            setError(
-              getIndicatorLoadError(err),
-            );
-          } finally {
-            if (!cancelled) {
-              setLoadingIndicators(
-                false,
-              );
-            }
-          }
+        if (cancelled) {
+          return;
         }
 
-        void loadIndicators();
-      }, 0);
+        setIndicators(data);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        setError(
+          getErrorMessage(
+            err,
+            "Unable to load indicators.",
+            "You do not have permission to view indicators.",
+          ),
+        );
+      } finally {
+        if (!cancelled) {
+          setLoadingIndicators(false);
+        }
+      }
+    }
+
+    void loadIndicators();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
     };
   }, []);
 
   /*
-   * =========================================
+   * ========================================================
    * OPEN INVESTIGATION
-   * =========================================
+   * ========================================================
    */
 
   const openInvestigation =
     useCallback(
-      async (
-        indicatorId: number,
-      ) => {
-        if (
-          !Number.isInteger(
-            indicatorId,
-          ) ||
-          indicatorId < 1
-        ) {
-          return;
-        }
-
+      async (indicatorId: number) => {
         try {
-          setSelectedId(
-            indicatorId,
-          );
-
-          setLoadingInvestigation(
-            true,
-          );
-
+          setSelectedId(indicatorId);
+          setLoadingInvestigation(true);
           setError("");
-
-          setInvestigation(
-            null,
-          );
+          setInvestigation(null);
 
           const data =
             await getInvestigation(
@@ -320,125 +304,61 @@ function Investigations() {
                 indicatorId,
             );
 
-          const backendIndicator =
-            data?.indicator;
-
-          const scores =
-            data?.scores;
-
-          const normalizedInvestigation:
-            InvestigationView = {
-            indicator_id:
-              backendIndicator?.id ??
+          const normalized =
+            normalizeInvestigation(
+              data,
               indicatorId,
+              selectedIndicator,
+            );
 
-            indicator_type:
-              backendIndicator?.type ??
-              selectedIndicator?.indicator_type ??
-              "UNKNOWN",
-
-            value:
-              backendIndicator?.value ??
-              selectedIndicator?.value ??
-              "Unknown indicator",
-
-            severity:
-              backendIndicator?.severity ??
-              selectedIndicator?.severity ??
-              "UNKNOWN",
-
-            source:
-              backendIndicator?.source ??
-              selectedIndicator?.source ??
-              null,
-
-            description:
-              selectedIndicator?.description ??
-              null,
-
-            threat_score:
-              Number(
-                scores?.threat_score ??
-                0,
-              ),
-
-            reputation_score:
-              Number(
-                scores?.reputation_score ??
-                0,
-              ),
-
-            confidence_score:
-              Number(
-                scores?.confidence_score ??
-                0,
-              ),
-
-            explanation:
-              data.explanation,
-
-            tags:
-              Array.isArray(
-                data?.tags,
-              )
-                ? data.tags
-                : [],
-
-            related_indicators:
-              Array.isArray(
-                data?.related_indicators,
-              )
-                ? data.related_indicators
-                : [],
-
-            alerts:
-              Array.isArray(
-                data?.alerts,
-              )
-                ? data.alerts
-                : [],
-
-            recommendation:
-              data?.recommendation ??
-              "No recommendation available.",
-          };
-
-          setInvestigation(
-            normalizedInvestigation,
-          );
+          setInvestigation(normalized);
         } catch (err) {
-          console.error(
-            "Failed to load investigation:",
-            err,
-          );
+          setInvestigation(null);
 
           setError(
-            getApiErrorMessage(err),
-          );
-
-          setInvestigation(
-            null,
+            getErrorMessage(
+              err,
+              "Unable to load investigation data.",
+              "You do not have permission to investigate indicators.",
+              "Indicator not found.",
+            ),
           );
         } finally {
-          setLoadingInvestigation(
-            false,
-          );
+          setLoadingInvestigation(false);
         }
       },
       [indicators],
     );
 
   /*
-   * =========================================
+   * ========================================================
    * URL-DRIVEN INVESTIGATION
    *
-   * Important:
-   * This effect NEVER calls setError().
+   * Supports:
    *
-   * URL validation errors are derived above
-   * through urlError.
-   * =========================================
+   * /investigations?indicator=42
+   *
+   * The timeout schedules the state-changing operation
+   * outside the synchronous effect body, satisfying the
+   * react-hooks/set-state-in-effect rule while preserving
+   * deep-link behaviour.
+   * ========================================================
    */
+
+  const requestedIndicatorExists =
+    useMemo(
+      () =>
+        requestedIndicatorId !== null &&
+        indicators.some(
+          (indicator) =>
+            indicator.id ===
+            requestedIndicatorId,
+        ),
+      [
+        indicators,
+        requestedIndicatorId,
+      ],
+    );
 
   useEffect(() => {
     if (loadingIndicators) {
@@ -464,9 +384,12 @@ function Investigations() {
       return;
     }
 
+    const indicatorId =
+      requestedIndicatorId;
+
     const timer = window.setTimeout(() => {
       void openInvestigation(
-        requestedIndicatorId,
+        indicatorId,
       );
     }, 0);
 
@@ -485,9 +408,9 @@ function Investigations() {
   ]);
 
   /*
-   * =========================================
+   * ========================================================
    * FILTERED INDICATORS
-   * =========================================
+   * ========================================================
    */
 
   const filteredIndicators =
@@ -509,36 +432,18 @@ function Investigations() {
             .toLowerCase()
             .includes(
               normalizedSearch,
-            ) ||
-          String(
-            indicator.indicator_type ??
-              "",
-          )
-            .toLowerCase()
-            .includes(
-              normalizedSearch,
             ),
       );
-    }, [
-      indicators,
-      search,
-    ]);
+    }, [indicators, search]);
 
   /*
-   * =========================================
-   * DISPLAY ERROR
-   * =========================================
+   * ========================================================
+   * RENDER
+   * ========================================================
    */
-
-  const displayError =
-    urlError || error;
 
   return (
     <div className="investigations-page">
-      {/* =====================================
-          PAGE HEADER
-      ===================================== */}
-
       <div className="investigation-page-header">
         <div>
           <h1>
@@ -553,24 +458,17 @@ function Investigations() {
       </div>
 
       <div className="investigation-layout">
-        {/* ===================================
-            INDICATOR SIDEBAR
-        =================================== */}
+        {/* =================================================
+            SIDEBAR
+        ================================================== */}
 
         <div className="investigation-sidebar">
           <div className="investigation-sidebar-header">
             <div>
-              <h3>
-                Indicators
-              </h3>
+              <h3>Indicators</h3>
 
               <span>
-                {indicators.length}{" "}
-                indicator
-                {indicators.length ===
-                1
-                  ? ""
-                  : "s"}
+                {indicators.length} indicators
               </span>
             </div>
 
@@ -600,29 +498,33 @@ function Investigations() {
           </div>
 
           {loadingIndicators && (
-            <div className="investigation-state">
+            <div
+              className="investigation-state"
+              role="status"
+              aria-live="polite"
+            >
               Loading indicators...
             </div>
           )}
 
           {!loadingIndicators &&
-            displayError &&
-            indicators.length ===
-              0 && (
-              <div className="investigation-error">
+            error &&
+            indicators.length === 0 && (
+              <div
+                className="investigation-error"
+                role="alert"
+              >
                 <AlertTriangle
                   size={18}
                   aria-hidden="true"
                 />
 
-                <span>
-                  {displayError}
-                </span>
+                <span>{error}</span>
               </div>
             )}
 
           {!loadingIndicators &&
-            !displayError &&
+            !error &&
             filteredIndicators.length ===
               0 && (
               <div className="investigation-state">
@@ -638,16 +540,22 @@ function Investigations() {
                     indicator.severity,
                   );
 
+                const isSelected =
+                  selectedId ===
+                  indicator.id;
+
                 return (
                   <button
                     type="button"
                     key={indicator.id}
                     className={`investigation-indicator ${
-                      selectedId ===
-                      indicator.id
+                      isSelected
                         ? "selected"
                         : ""
                     }`}
+                    aria-pressed={
+                      isSelected
+                    }
                     onClick={() =>
                       void openInvestigation(
                         indicator.id,
@@ -678,13 +586,17 @@ function Investigations() {
           </div>
         </div>
 
-        {/* ===================================
-            INVESTIGATION CONTENT
-        =================================== */}
+        {/* =================================================
+            MAIN CONTENT
+        ================================================== */}
 
         <div className="investigation-content">
           {loadingInvestigation && (
-            <div className="investigation-empty">
+            <div
+              className="investigation-empty"
+              role="status"
+              aria-live="polite"
+            >
               <ShieldAlert
                 size={42}
                 aria-hidden="true"
@@ -702,7 +614,7 @@ function Investigations() {
 
           {!loadingInvestigation &&
             !investigation &&
-            displayError && (
+            error && (
               <div
                 className="investigation-error"
                 role="alert"
@@ -712,15 +624,13 @@ function Investigations() {
                   aria-hidden="true"
                 />
 
-                <span>
-                  {displayError}
-                </span>
+                <span>{error}</span>
               </div>
             )}
 
           {!loadingInvestigation &&
             !investigation &&
-            !displayError && (
+            !error && (
               <div className="investigation-empty">
                 <ShieldAlert
                   size={42}
@@ -742,9 +652,9 @@ function Investigations() {
           {!loadingInvestigation &&
             investigation && (
               <>
-                {/* =========================
+                {/* =================================================
                     INVESTIGATION HEADER
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-header">
                   <div>
@@ -774,9 +684,9 @@ function Investigations() {
                   </span>
                 </div>
 
-                {/* =========================
-                    SCORE GRID
-                ========================= */}
+                {/* =================================================
+                    SCORE CARDS
+                ================================================== */}
 
                 <div className="investigation-score-grid">
                   <div className="investigation-score-card">
@@ -828,9 +738,9 @@ function Investigations() {
                   </div>
                 </div>
 
-                {/* =========================
+                {/* =================================================
                     ENRICHMENT EXPLANATION
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -868,9 +778,7 @@ function Investigations() {
                           .reasons.map(
                             (reason) => (
                               <li
-                                key={
-                                  reason
-                                }
+                                key={reason}
                               >
                                 {reason}
                               </li>
@@ -903,9 +811,7 @@ function Investigations() {
                           .reasons.map(
                             (reason) => (
                               <li
-                                key={
-                                  reason
-                                }
+                                key={reason}
                               >
                                 {reason}
                               </li>
@@ -938,9 +844,7 @@ function Investigations() {
                           .reasons.map(
                             (reason) => (
                               <li
-                                key={
-                                  reason
-                                }
+                                key={reason}
                               >
                                 {reason}
                               </li>
@@ -978,10 +882,7 @@ function Investigations() {
                               .explanation
                               .tag_reasons,
                           ).map(
-                            ([
-                              tag,
-                              reason,
-                            ]) => (
+                            ([tag, reason]) => (
                               <div
                                 key={tag}
                                 className="investigation-tag-reason"
@@ -1002,9 +903,9 @@ function Investigations() {
                   </div>
                 </div>
 
-                {/* =========================
+                {/* =================================================
                     INDICATOR DETAILS
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -1050,19 +951,23 @@ function Investigations() {
                   </div>
                 </div>
 
-                {/* =========================
+                {/* =================================================
                     THREAT TAGS
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
                     <h3>
                       Threat Tags
                     </h3>
+
+                    <span>
+                      {investigation.tags.length}
+                    </span>
                   </div>
 
-                  {investigation.tags
-                    .length > 0 ? (
+                  {investigation.tags.length >
+                  0 ? (
                     <div className="investigation-tags">
                       {investigation.tags.map(
                         (tag) => (
@@ -1082,9 +987,9 @@ function Investigations() {
                   )}
                 </div>
 
-                {/* =========================
-                    RECOMMENDATION
-                ========================= */}
+                {/* =================================================
+                    ANALYST RECOMMENDATION
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -1100,7 +1005,8 @@ function Investigations() {
                       )}
                     </p>
 
-                    {typeof investigation.recommendation !==
+                    {typeof investigation
+                      .recommendation !==
                       "string" &&
                       investigation.recommendation && (
                         <>
@@ -1113,29 +1019,39 @@ function Investigations() {
                             }
                           </strong>
 
-                          <ul>
-                            {investigation
-                              .recommendation
-                              .actions.map(
-                                (action) => (
-                                  <li
-                                    key={
-                                      action
-                                    }
-                                  >
-                                    {action}
-                                  </li>
-                                ),
-                              )}
-                          </ul>
+                          {investigation
+                            .recommendation
+                            .actions
+                            .length > 0 && (
+                            <ul>
+                              {investigation
+                                .recommendation
+                                .actions
+                                .map(
+                                  (
+                                    action,
+                                  ) => (
+                                    <li
+                                      key={
+                                        action
+                                      }
+                                    >
+                                      {
+                                        action
+                                      }
+                                    </li>
+                                  ),
+                                )}
+                            </ul>
+                          )}
                         </>
                       )}
                   </div>
                 </div>
 
-                {/* =========================
+                {/* =================================================
                     RELATED INDICATORS
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -1159,9 +1075,7 @@ function Investigations() {
                       {investigation.related_indicators.map(
                         (related) => (
                           <div
-                            key={
-                              related.id
-                            }
+                            key={related.id}
                             className="related-indicator"
                           >
                             <div>
@@ -1202,9 +1116,9 @@ function Investigations() {
                   )}
                 </div>
 
-                {/* =========================
+                {/* =================================================
                     RELATED ALERTS
-                ========================= */}
+                ================================================== */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -1214,8 +1128,7 @@ function Investigations() {
 
                     <span>
                       {
-                        investigation
-                          .alerts
+                        investigation.alerts
                           .length
                       }
                     </span>
@@ -1227,15 +1140,11 @@ function Investigations() {
                       {investigation.alerts.map(
                         (alert) => (
                           <div
-                            key={
-                              alert.id
-                            }
+                            key={alert.id}
                             className="related-alert"
                           >
                             <strong>
-                              {
-                                alert.title
-                              }
+                              {alert.title}
                             </strong>
 
                             <span>
