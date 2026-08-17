@@ -1,5 +1,15 @@
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import axios from "axios";
+
+import {
+  useSearchParams,
+} from "react-router-dom";
 
 import {
   AlertTriangle,
@@ -37,18 +47,109 @@ interface InvestigationView {
   recommendation: Investigation["recommendation"];
 }
 
-function Investigations() {
-  const [indicators, setIndicators] = useState<Indicator[]>(
-    [],
+function getApiErrorMessage(
+  error: unknown,
+): string {
+  if (!axios.isAxiosError(error)) {
+    return "Unable to load investigation data.";
+  }
+
+  switch (error.response?.status) {
+    case 401:
+      return "Your session has expired. Please log in again.";
+
+    case 403:
+      return "You do not have permission to investigate indicators.";
+
+    case 404:
+      return "Indicator not found.";
+
+    case 422:
+      return "Invalid investigation request.";
+
+    default:
+      return "Unable to load investigation data.";
+  }
+}
+
+function getIndicatorLoadError(
+  error: unknown,
+): string {
+  if (!axios.isAxiosError(error)) {
+    return "Unable to load indicators.";
+  }
+
+  switch (error.response?.status) {
+    case 401:
+      return "Your session has expired. Please log in again.";
+
+    case 403:
+      return "You do not have permission to view indicators.";
+
+    case 404:
+      return "Indicator endpoint was not found.";
+
+    case 422:
+      return "Invalid indicator request.";
+
+    default:
+      return "Unable to load indicators.";
+  }
+}
+
+function safeSeverity(
+  severity:
+    | string
+    | null
+    | undefined,
+): string {
+  return (
+    severity
+      ?.toString()
+      .trim()
+      .toLowerCase() ||
+    "unknown"
   );
+}
+
+function renderRecommendation(
+  recommendation:
+    | InvestigationView["recommendation"],
+): string {
+  if (!recommendation) {
+    return "No recommendation available.";
+  }
+
+  if (
+    typeof recommendation ===
+    "string"
+  ) {
+    return recommendation;
+  }
+
+  return (
+    recommendation.summary ||
+    "No recommendation available."
+  );
+}
+
+function Investigations() {
+  const [searchParams] =
+    useSearchParams();
+
+  const [indicators, setIndicators] =
+    useState<Indicator[]>([]);
 
   const [investigation, setInvestigation] =
-    useState<InvestigationView | null>(null);
+    useState<InvestigationView | null>(
+      null,
+    );
 
   const [selectedId, setSelectedId] =
     useState<number | null>(null);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
 
   const [loadingIndicators, setLoadingIndicators] =
     useState(true);
@@ -56,262 +157,388 @@ function Investigations() {
   const [loadingInvestigation, setLoadingInvestigation] =
     useState(false);
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
+
+  /*
+   * =========================================
+   * URL STATE
+   *
+   * Supported URL:
+   *
+   * /investigations?indicator=42
+   *
+   * No state is mutated directly from this
+   * calculation. This keeps the URL validation
+   * deterministic and ESLint-friendly.
+   * =========================================
+   */
+
+  const indicatorParam =
+    searchParams.get("indicator");
+
+  const requestedIndicatorId =
+    indicatorParam
+      ? Number(indicatorParam)
+      : null;
+
+  const invalidIndicatorParam =
+    requestedIndicatorId !== null &&
+    (
+      !Number.isInteger(
+        requestedIndicatorId,
+      ) ||
+      requestedIndicatorId < 1
+    );
+
+  const requestedIndicator =
+    requestedIndicatorId !== null
+      ? indicators.find(
+          (indicator) =>
+            indicator.id ===
+            requestedIndicatorId,
+        )
+      : undefined;
+
+  const requestedIndicatorExists =
+    requestedIndicator !== undefined;
+
+  const urlError =
+    !loadingIndicators &&
+    indicatorParam
+      ? invalidIndicatorParam
+        ? "Invalid investigation indicator."
+        : !requestedIndicatorExists
+          ? "The requested indicator is not available."
+          : ""
+      : "";
+
+  /*
+   * =========================================
+   * LOAD INDICATORS
+   *
+   * The asynchronous work is scheduled after
+   * the effect begins so React's
+   * set-state-in-effect rule is satisfied.
+   * =========================================
+   */
 
   useEffect(() => {
-    async function loadIndicators() {
-      try {
-        setLoadingIndicators(true);
-        setError("");
+    let cancelled = false;
 
-        const data = await getIndicators({
-          skip: 0,
-          limit: 50,
-        });
+    const timer =
+      window.setTimeout(() => {
+        async function loadIndicators() {
+          try {
+            const data =
+              await getIndicators({
+                skip: 0,
+                limit: 50,
+              });
 
-        setIndicators(data);
-      } catch (err) {
-        if (axios.isAxiosError(err)) {
-          const status = err.response?.status;
+            if (cancelled) {
+              return;
+            }
 
-          if (status === 401) {
-            setError(
-              "Your session has expired. Please log in again.",
-            );
-          } else if (status === 403) {
-            setError(
-              "You do not have permission to view indicators.",
-            );
-          } else {
+            setIndicators(data);
+            setError("");
+          } catch (err) {
+            if (cancelled) {
+              return;
+            }
+
             console.error(
               "Failed to load investigation indicators:",
               err,
             );
 
             setError(
-              "Unable to load indicators.",
+              getIndicatorLoadError(err),
             );
+          } finally {
+            if (!cancelled) {
+              setLoadingIndicators(
+                false,
+              );
+            }
           }
-        } else {
+        }
+
+        void loadIndicators();
+      }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  /*
+   * =========================================
+   * OPEN INVESTIGATION
+   * =========================================
+   */
+
+  const openInvestigation =
+    useCallback(
+      async (
+        indicatorId: number,
+      ) => {
+        if (
+          !Number.isInteger(
+            indicatorId,
+          ) ||
+          indicatorId < 1
+        ) {
+          return;
+        }
+
+        try {
+          setSelectedId(
+            indicatorId,
+          );
+
+          setLoadingInvestigation(
+            true,
+          );
+
+          setError("");
+
+          setInvestigation(
+            null,
+          );
+
+          const data =
+            await getInvestigation(
+              indicatorId,
+            );
+
+          const selectedIndicator =
+            indicators.find(
+              (indicator) =>
+                indicator.id ===
+                indicatorId,
+            );
+
+          const backendIndicator =
+            data?.indicator;
+
+          const scores =
+            data?.scores;
+
+          const normalizedInvestigation:
+            InvestigationView = {
+            indicator_id:
+              backendIndicator?.id ??
+              indicatorId,
+
+            indicator_type:
+              backendIndicator?.type ??
+              selectedIndicator?.indicator_type ??
+              "UNKNOWN",
+
+            value:
+              backendIndicator?.value ??
+              selectedIndicator?.value ??
+              "Unknown indicator",
+
+            severity:
+              backendIndicator?.severity ??
+              selectedIndicator?.severity ??
+              "UNKNOWN",
+
+            source:
+              backendIndicator?.source ??
+              selectedIndicator?.source ??
+              null,
+
+            description:
+              selectedIndicator?.description ??
+              null,
+
+            threat_score:
+              Number(
+                scores?.threat_score ??
+                0,
+              ),
+
+            reputation_score:
+              Number(
+                scores?.reputation_score ??
+                0,
+              ),
+
+            confidence_score:
+              Number(
+                scores?.confidence_score ??
+                0,
+              ),
+
+            explanation:
+              data.explanation,
+
+            tags:
+              Array.isArray(
+                data?.tags,
+              )
+                ? data.tags
+                : [],
+
+            related_indicators:
+              Array.isArray(
+                data?.related_indicators,
+              )
+                ? data.related_indicators
+                : [],
+
+            alerts:
+              Array.isArray(
+                data?.alerts,
+              )
+                ? data.alerts
+                : [],
+
+            recommendation:
+              data?.recommendation ??
+              "No recommendation available.",
+          };
+
+          setInvestigation(
+            normalizedInvestigation,
+          );
+        } catch (err) {
           console.error(
-            "Failed to load investigation indicators:",
+            "Failed to load investigation:",
             err,
           );
 
           setError(
-            "Unable to load indicators.",
+            getApiErrorMessage(err),
+          );
+
+          setInvestigation(
+            null,
+          );
+        } finally {
+          setLoadingInvestigation(
+            false,
           );
         }
-      } finally {
-        setLoadingIndicators(false);
-      }
-    }
-
-    void loadIndicators();
-  }, []);
-
-  async function openInvestigation(
-    indicatorId: number,
-  ) {
-    try {
-      setSelectedId(indicatorId);
-      setLoadingInvestigation(true);
-      setError("");
-      setInvestigation(null);
-
-      const data = await getInvestigation(
-        indicatorId,
-      );
-
-      const selectedIndicator =
-        indicators.find(
-          (indicator) =>
-            indicator.id === indicatorId,
-        );
-
-      const backendIndicator =
-        data?.indicator;
-
-      const scores = data?.scores;
-
-      const normalizedInvestigation:
-        InvestigationView = {
-        indicator_id:
-          backendIndicator?.id ??
-          indicatorId,
-
-        indicator_type:
-          backendIndicator?.type ??
-          selectedIndicator?.indicator_type ??
-          "UNKNOWN",
-
-        value:
-          backendIndicator?.value ??
-          selectedIndicator?.value ??
-          "Unknown indicator",
-
-        severity:
-          backendIndicator?.severity ??
-          selectedIndicator?.severity ??
-          "UNKNOWN",
-
-        source:
-          backendIndicator?.source ??
-          selectedIndicator?.source ??
-          null,
-
-        description:
-          selectedIndicator?.description ??
-          null,
-
-        threat_score:
-          Number(
-            scores?.threat_score ?? 0,
-          ),
-
-        reputation_score:
-          Number(
-            scores?.reputation_score ?? 0,
-          ),
-
-        confidence_score:
-          Number(
-            scores?.confidence_score ?? 0,
-          ),
-
-        explanation: data.explanation,
-
-        tags:
-          Array.isArray(data?.tags)
-            ? data.tags
-            : [],
-
-        related_indicators:
-          Array.isArray(
-            data?.related_indicators,
-          )
-            ? data.related_indicators
-            : [],
-
-        alerts:
-          Array.isArray(data?.alerts)
-            ? data.alerts
-            : [],
-
-        recommendation:
-          data?.recommendation ??
-          "No recommendation available.",
-      };
-
-      setInvestigation(
-        normalizedInvestigation,
-      );
-    } catch (err) {
-      /*
-       * Handle expected API authorization
-       * responses without treating them as
-       * unexpected application failures.
-       */
-      if (axios.isAxiosError(err)) {
-        const status =
-          err.response?.status;
-
-        switch (status) {
-          case 401:
-            setError(
-              "Your session has expired. Please log in again.",
-            );
-            break;
-
-          case 403:
-            setError(
-              "You do not have permission to investigate indicators.",
-            );
-            break;
-
-          case 404:
-            setError(
-              "Indicator not found.",
-            );
-            break;
-
-          default:
-            console.error(
-              "Failed to load investigation:",
-              err,
-            );
-
-            setError(
-              "Unable to load investigation data.",
-            );
-        }
-      } else {
-        console.error(
-          "Failed to load investigation:",
-          err,
-        );
-
-        setError(
-          "Unable to load investigation data.",
-        );
-      }
-
-      setInvestigation(null);
-    } finally {
-      setLoadingInvestigation(false);
-    }
-  }
-
-  function safeSeverity(
-    severity:
-      | string
-      | null
-      | undefined,
-  ): string {
-    return (
-      severity
-        ?.toString()
-        .trim()
-        .toLowerCase() ||
-      "unknown"
+      },
+      [indicators],
     );
-  }
 
-  function renderRecommendation(
-    recommendation:
-      | InvestigationView["recommendation"],
-  ) {
-    if (!recommendation) {
-      return "No recommendation available.";
+  /*
+   * =========================================
+   * URL-DRIVEN INVESTIGATION
+   *
+   * Important:
+   * This effect NEVER calls setError().
+   *
+   * URL validation errors are derived above
+   * through urlError.
+   * =========================================
+   */
+
+  useEffect(() => {
+    if (loadingIndicators) {
+      return;
+    }
+
+    if (!indicatorParam) {
+      return;
     }
 
     if (
-      typeof recommendation ===
-      "string"
+      invalidIndicatorParam ||
+      !requestedIndicatorExists ||
+      requestedIndicatorId === null
     ) {
-      return recommendation;
+      return;
     }
 
-    return (
-      recommendation.summary ||
-      "No recommendation available."
-    );
-  }
+    if (
+      selectedId === requestedIndicatorId &&
+      investigation !== null
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void openInvestigation(
+        requestedIndicatorId,
+      );
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    loadingIndicators,
+    indicatorParam,
+    invalidIndicatorParam,
+    requestedIndicatorExists,
+    requestedIndicatorId,
+    selectedId,
+    investigation,
+    openInvestigation,
+  ]);
+
+  /*
+   * =========================================
+   * FILTERED INDICATORS
+   * =========================================
+   */
 
   const filteredIndicators =
-    indicators.filter(
-      (indicator) =>
-        String(
-          indicator.value ?? "",
-        )
-          .toLowerCase()
-          .includes(
-            search.toLowerCase(),
-          ),
-    );
+    useMemo(() => {
+      const normalizedSearch =
+        search
+          .trim()
+          .toLowerCase();
+
+      if (!normalizedSearch) {
+        return indicators;
+      }
+
+      return indicators.filter(
+        (indicator) =>
+          String(
+            indicator.value ?? "",
+          )
+            .toLowerCase()
+            .includes(
+              normalizedSearch,
+            ) ||
+          String(
+            indicator.indicator_type ??
+              "",
+          )
+            .toLowerCase()
+            .includes(
+              normalizedSearch,
+            ),
+      );
+    }, [
+      indicators,
+      search,
+    ]);
+
+  /*
+   * =========================================
+   * DISPLAY ERROR
+   * =========================================
+   */
+
+  const displayError =
+    urlError || error;
 
   return (
     <div className="investigations-page">
+      {/* =====================================
+          PAGE HEADER
+      ===================================== */}
+
       <div className="investigation-page-header">
         <div>
           <h1>
@@ -326,13 +553,24 @@ function Investigations() {
       </div>
 
       <div className="investigation-layout">
+        {/* ===================================
+            INDICATOR SIDEBAR
+        =================================== */}
+
         <div className="investigation-sidebar">
           <div className="investigation-sidebar-header">
             <div>
-              <h3>Indicators</h3>
+              <h3>
+                Indicators
+              </h3>
 
               <span>
-                {indicators.length} indicators
+                {indicators.length}{" "}
+                indicator
+                {indicators.length ===
+                1
+                  ? ""
+                  : "s"}
               </span>
             </div>
 
@@ -368,20 +606,23 @@ function Investigations() {
           )}
 
           {!loadingIndicators &&
-            error &&
-            indicators.length === 0 && (
+            displayError &&
+            indicators.length ===
+              0 && (
               <div className="investigation-error">
                 <AlertTriangle
                   size={18}
                   aria-hidden="true"
                 />
 
-                <span>{error}</span>
+                <span>
+                  {displayError}
+                </span>
               </div>
             )}
 
           {!loadingIndicators &&
-            !error &&
+            !displayError &&
             filteredIndicators.length ===
               0 && (
               <div className="investigation-state">
@@ -415,7 +656,9 @@ function Investigations() {
                   >
                     <div>
                       <span className="investigation-type">
-                        {indicator.indicator_type}
+                        {
+                          indicator.indicator_type
+                        }
                       </span>
 
                       <strong>
@@ -434,6 +677,10 @@ function Investigations() {
             )}
           </div>
         </div>
+
+        {/* ===================================
+            INVESTIGATION CONTENT
+        =================================== */}
 
         <div className="investigation-content">
           {loadingInvestigation && (
@@ -455,20 +702,25 @@ function Investigations() {
 
           {!loadingInvestigation &&
             !investigation &&
-            error && (
-              <div className="investigation-error">
+            displayError && (
+              <div
+                className="investigation-error"
+                role="alert"
+              >
                 <AlertTriangle
                   size={22}
                   aria-hidden="true"
                 />
 
-                <span>{error}</span>
+                <span>
+                  {displayError}
+                </span>
               </div>
             )}
 
           {!loadingInvestigation &&
             !investigation &&
-            !error && (
+            !displayError && (
               <div className="investigation-empty">
                 <ShieldAlert
                   size={42}
@@ -490,10 +742,16 @@ function Investigations() {
           {!loadingInvestigation &&
             investigation && (
               <>
+                {/* =========================
+                    INVESTIGATION HEADER
+                ========================= */}
+
                 <div className="investigation-header">
                   <div>
                     <div className="investigation-header-type">
-                      {investigation.indicator_type}
+                      {
+                        investigation.indicator_type
+                      }
                     </div>
 
                     <h2>
@@ -516,6 +774,10 @@ function Investigations() {
                   </span>
                 </div>
 
+                {/* =========================
+                    SCORE GRID
+                ========================= */}
+
                 <div className="investigation-score-grid">
                   <div className="investigation-score-card">
                     <span>
@@ -523,7 +785,9 @@ function Investigations() {
                     </span>
 
                     <strong>
-                      {investigation.threat_score}
+                      {
+                        investigation.threat_score
+                      }
                     </strong>
 
                     <small>
@@ -564,6 +828,10 @@ function Investigations() {
                   </div>
                 </div>
 
+                {/* =========================
+                    ENRICHMENT EXPLANATION
+                ========================= */}
+
                 <div className="investigation-card">
                   <div className="investigation-card-header">
                     <h3>
@@ -578,92 +846,153 @@ function Investigations() {
                   <div className="investigation-explanation">
                     <div className="investigation-explanation-section">
                       <div className="investigation-explanation-title">
-                        <strong>Threat Score</strong>
+                        <strong>
+                          Threat Score
+                        </strong>
 
                         <span>
-                          {investigation.explanation.threat_score.value}/100
+                          {
+                            investigation
+                              .explanation
+                              .threat_score
+                              .value
+                          }
+                          /100
                         </span>
                       </div>
 
                       <ul className="investigation-explanation-reasons">
-                        {investigation.explanation.threat_score.reasons.map(
-                          (reason) => (
-                            <li key={reason}>
-                              {reason}
-                            </li>
-                          ),
-                        )}
+                        {investigation
+                          .explanation
+                          .threat_score
+                          .reasons.map(
+                            (reason) => (
+                              <li
+                                key={
+                                  reason
+                                }
+                              >
+                                {reason}
+                              </li>
+                            ),
+                          )}
                       </ul>
                     </div>
 
                     <div className="investigation-explanation-section">
                       <div className="investigation-explanation-title">
-                        <strong>Reputation Score</strong>
+                        <strong>
+                          Reputation Score
+                        </strong>
 
                         <span>
-                          {investigation.explanation.reputation_score.value}/100
+                          {
+                            investigation
+                              .explanation
+                              .reputation_score
+                              .value
+                          }
+                          /100
                         </span>
                       </div>
 
                       <ul className="investigation-explanation-reasons">
-                        {investigation.explanation.reputation_score.reasons.map(
-                          (reason) => (
-                            <li key={reason}>
-                              {reason}
-                            </li>
-                          ),
-                        )}
+                        {investigation
+                          .explanation
+                          .reputation_score
+                          .reasons.map(
+                            (reason) => (
+                              <li
+                                key={
+                                  reason
+                                }
+                              >
+                                {reason}
+                              </li>
+                            ),
+                          )}
                       </ul>
                     </div>
 
                     <div className="investigation-explanation-section">
                       <div className="investigation-explanation-title">
-                        <strong>Confidence Score</strong>
+                        <strong>
+                          Confidence Score
+                        </strong>
 
                         <span>
-                          {investigation.explanation.confidence_score.value}/100
+                          {
+                            investigation
+                              .explanation
+                              .confidence_score
+                              .value
+                          }
+                          /100
                         </span>
                       </div>
 
                       <ul className="investigation-explanation-reasons">
-                        {investigation.explanation.confidence_score.reasons.map(
-                          (reason) => (
-                            <li key={reason}>
-                              {reason}
-                            </li>
-                          ),
-                        )}
+                        {investigation
+                          .explanation
+                          .confidence_score
+                          .reasons.map(
+                            (reason) => (
+                              <li
+                                key={
+                                  reason
+                                }
+                              >
+                                {reason}
+                              </li>
+                            ),
+                          )}
                       </ul>
                     </div>
 
                     {Object.keys(
-                      investigation.explanation.tag_reasons,
+                      investigation
+                        .explanation
+                        .tag_reasons,
                     ).length > 0 && (
                       <div className="investigation-explanation-section">
                         <div className="investigation-explanation-title">
-                          <strong>Tag Reasoning</strong>
+                          <strong>
+                            Tag Reasoning
+                          </strong>
 
                           <span>
                             {
                               Object.keys(
-                                investigation.explanation.tag_reasons,
+                                investigation
+                                  .explanation
+                                  .tag_reasons,
                               ).length
-                            } reasons
+                            }{" "}
+                            reasons
                           </span>
                         </div>
 
                         <div className="investigation-tag-reasons">
                           {Object.entries(
-                            investigation.explanation.tag_reasons,
+                            investigation
+                              .explanation
+                              .tag_reasons,
                           ).map(
-                            ([tag, reason]) => (
+                            ([
+                              tag,
+                              reason,
+                            ]) => (
                               <div
                                 key={tag}
                                 className="investigation-tag-reason"
                               >
-                                <span>{tag}</span>
+                                <span>
+                                  {tag}
+                                </span>
 
-                                <p>{reason}</p>
+                                <p>
+                                  {reason}
+                                </p>
                               </div>
                             ),
                           )}
@@ -672,6 +1001,10 @@ function Investigations() {
                     )}
                   </div>
                 </div>
+
+                {/* =========================
+                    INDICATOR DETAILS
+                ========================= */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -694,7 +1027,9 @@ function Investigations() {
                     </div>
 
                     <div>
-                      <span>Source</span>
+                      <span>
+                        Source
+                      </span>
 
                       <strong>
                         {investigation.source ||
@@ -715,6 +1050,10 @@ function Investigations() {
                   </div>
                 </div>
 
+                {/* =========================
+                    THREAT TAGS
+                ========================= */}
+
                 <div className="investigation-card">
                   <div className="investigation-card-header">
                     <h3>
@@ -722,8 +1061,8 @@ function Investigations() {
                     </h3>
                   </div>
 
-                  {investigation.tags.length >
-                  0 ? (
+                  {investigation.tags
+                    .length > 0 ? (
                     <div className="investigation-tags">
                       {investigation.tags.map(
                         (tag) => (
@@ -742,6 +1081,10 @@ function Investigations() {
                     </div>
                   )}
                 </div>
+
+                {/* =========================
+                    RECOMMENDATION
+                ========================= */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -771,18 +1114,28 @@ function Investigations() {
                           </strong>
 
                           <ul>
-                            {investigation.recommendation.actions.map(
-                              (action) => (
-                                <li key={action}>
-                                  {action}
-                                </li>
-                              ),
-                            )}
+                            {investigation
+                              .recommendation
+                              .actions.map(
+                                (action) => (
+                                  <li
+                                    key={
+                                      action
+                                    }
+                                  >
+                                    {action}
+                                  </li>
+                                ),
+                              )}
                           </ul>
                         </>
                       )}
                   </div>
                 </div>
+
+                {/* =========================
+                    RELATED INDICATORS
+                ========================= */}
 
                 <div className="investigation-card">
                   <div className="investigation-card-header">
@@ -799,13 +1152,16 @@ function Investigations() {
                     </span>
                   </div>
 
-                  {investigation.related_indicators
+                  {investigation
+                    .related_indicators
                     .length > 0 ? (
                     <div className="related-indicators">
                       {investigation.related_indicators.map(
                         (related) => (
                           <div
-                            key={related.id}
+                            key={
+                              related.id
+                            }
                             className="related-indicator"
                           >
                             <div>
@@ -816,13 +1172,17 @@ function Investigations() {
                               </span>
 
                               <strong>
-                                {related.value}
+                                {
+                                  related.value
+                                }
                               </strong>
                             </div>
 
                             <div>
                               <span>
-                                {related.severity}
+                                {
+                                  related.severity
+                                }
                               </span>
 
                               <strong>
@@ -842,6 +1202,10 @@ function Investigations() {
                   )}
                 </div>
 
+                {/* =========================
+                    RELATED ALERTS
+                ========================= */}
+
                 <div className="investigation-card">
                   <div className="investigation-card-header">
                     <h3>
@@ -849,21 +1213,29 @@ function Investigations() {
                     </h3>
 
                     <span>
-                      {investigation.alerts.length}
+                      {
+                        investigation
+                          .alerts
+                          .length
+                      }
                     </span>
                   </div>
 
-                  {investigation.alerts.length >
-                  0 ? (
+                  {investigation.alerts
+                    .length > 0 ? (
                     <div className="related-alerts">
                       {investigation.alerts.map(
                         (alert) => (
                           <div
-                            key={alert.id}
+                            key={
+                              alert.id
+                            }
                             className="related-alert"
                           >
                             <strong>
-                              {alert.title}
+                              {
+                                alert.title
+                              }
                             </strong>
 
                             <span>

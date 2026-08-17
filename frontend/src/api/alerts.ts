@@ -9,6 +9,7 @@ export interface Alert {
   source: string | null;
   created_by: number | null;
   assigned_to: number | null;
+  indicator_id: number | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -25,12 +26,13 @@ export interface AlertQuery {
 export async function getAlerts(
   params: AlertQuery = {},
 ): Promise<Alert[]> {
-  const response = await apiClient.get<Alert[]>(
-    "/alerts/",
-    {
-      params,
-    },
-  );
+  const response =
+    await apiClient.get<Alert[]>(
+      "/alerts/",
+      {
+        params,
+      },
+    );
 
   return response.data;
 }
