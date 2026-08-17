@@ -771,3 +771,162 @@ def test_investigation_related_indicators_are_sorted(
 
         for value in related_values:
             delete_indicator_by_value(value)
+
+def test_investigation_returns_explanation(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        explanation = response.json()["explanation"]
+
+        assert explanation["threat_score"]["value"] == 85
+        assert explanation["reputation_score"]["value"] == 40
+        assert explanation["confidence_score"]["value"] == 67
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_explains_threat_score(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        reasons = (
+            response.json()["explanation"]
+            ["threat_score"]["reasons"]
+        )
+
+        assert (
+            "HIGH severity contributes 85/100."
+            in reasons
+        )
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_explains_persisted_reputation_score(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator(
+        reputation_score=40,
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        explanation = response.json()["explanation"]
+
+        assert explanation["reputation_score"]["value"] == 40
+
+        assert (
+            "Persisted reputation evidence score recorded "
+            "during threat intelligence enrichment."
+            in explanation["reputation_score"]["reasons"]
+        )
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_returns_confidence_explanation(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator(
+        threat_score=85,
+        reputation_score=40,
+        confidence_score=67,
+    )
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        explanation = response.json()["explanation"]
+
+        assert explanation["confidence_score"]["value"] == 67
+
+        reasons = explanation["confidence_score"]["reasons"]
+
+        assert (
+            "60% threat score contribution: 51."
+            in reasons
+        )
+
+        assert (
+            "40% reputation evidence contribution: 16."
+            in reasons
+        )
+
+        assert (
+            "Persisted confidence score: 67/100."
+            in reasons
+        )
+
+    finally:
+        delete_test_indicator()
+
+
+def test_investigation_returns_tag_reasons(
+    client,
+    admin_headers,
+):
+    indicator_id = create_test_indicator()
+
+    try:
+        response = client.get(
+            f"/investigations/{indicator_id}",
+            headers=admin_headers,
+        )
+
+        assert response.status_code == 200
+
+        tag_reasons = (
+            response.json()["explanation"]
+            ["tag_reasons"]
+        )
+
+        assert tag_reasons["ip"] == (
+            "Indicator type is IP."
+        )
+
+        assert tag_reasons["high"] == (
+            "Indicator severity is HIGH."
+        )
+
+        assert tag_reasons["high-risk"] == (
+            "Indicator severity is HIGH or CRITICAL."
+        )
+
+    finally:
+        delete_test_indicator()

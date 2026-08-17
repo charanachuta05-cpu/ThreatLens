@@ -2,6 +2,10 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from app.threat_intel.explanation import (
+    EnrichmentExplanation,
+)
+
 
 class RecommendationPriority(str, Enum):
     P1 = "P1"
@@ -60,6 +64,7 @@ class InvestigationAlert(BaseModel):
 class InvestigationResponse(BaseModel):
     indicator: InvestigationIndicator
     scores: InvestigationScores
+    explanation: EnrichmentExplanation
     tags: list[str]
     related_indicators: list[RelatedIndicator]
     alerts: list[InvestigationAlert]

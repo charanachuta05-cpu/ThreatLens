@@ -193,3 +193,47 @@ def test_full_enrichment_explanation():
     assert "suspicious" in result.tag_reasons
     assert "poor-reputation" in result.tag_reasons
     assert "network" in result.tag_reasons
+
+def test_confidence_explanation_uses_persisted_score():
+    result = explain_confidence_score(
+        threat_score=85,
+        reputation_score=40,
+        persisted_score=67,
+    )
+
+    assert result.value == 67
+
+    assert (
+        "Weighted result rounds to 67/100."
+        in result.reasons
+    )
+
+    assert (
+        "Persisted confidence score: 67/100."
+        in result.reasons
+    )
+
+
+def test_enrichment_explanation_uses_persisted_confidence():
+    indicator = ThreatIndicator(
+        value="203.0.113.10",
+        type="IP",
+        source="test",
+        severity="HIGH",
+        reputation=10,
+        malicious=3,
+        suspicious=2,
+        tags=["network"],
+    )
+
+    result = explain_enrichment(
+        indicator,
+        persisted_confidence_score=67,
+    )
+
+    assert result.confidence_score.value == 67
+
+    assert (
+        "Persisted confidence score: 67/100."
+        in result.confidence_score.reasons
+    )

@@ -9,7 +9,7 @@ from app.threat_intel.schemas import ThreatIndicator
 @dataclass(slots=True)
 class ScoreExplanation:
     """
-    Explain a calculated intelligence score.
+    Explain a calculated or persisted intelligence score.
     """
 
     value: int
@@ -56,13 +56,18 @@ def explain_threat_score(
 
 def explain_reputation_score(
     indicator: ThreatIndicator,
+    persisted_score: int | None = None,
 ) -> ScoreExplanation:
     """
     Explain how malicious and suspicious observations
     contribute to the reputation evidence score.
+
+    When a persisted score is supplied, it is treated as
+    authoritative for investigation results while the
+    locally calculated value remains available as context.
     """
 
-    score = calculate_reputation(
+    calculated_score = calculate_reputation(
         indicator,
     )
 
@@ -110,8 +115,24 @@ def explain_reputation_score(
             "The reputation evidence score is capped at 100."
         )
 
+    value = calculated_score
+
+    if persisted_score is not None:
+        value = persisted_score
+
+        reasons.append(
+            (
+                "Persisted reputation evidence score recorded "
+                "during threat intelligence enrichment."
+            )
+        )
+
+        reasons.append(
+            f"Persisted reputation score: {persisted_score}/100."
+        )
+
     return ScoreExplanation(
-        value=score,
+        value=value,
         reasons=reasons,
     )
 
@@ -119,12 +140,17 @@ def explain_reputation_score(
 def explain_confidence_score(
     threat_score: int,
     reputation_score: int,
+    persisted_score: int | None = None,
 ) -> ScoreExplanation:
     """
     Explain the weighted confidence calculation.
+
+    When a persisted score is supplied, it is treated as the
+    authoritative investigation value while the weighted result
+    remains available as explanatory context.
     """
 
-    score = calculate_confidence(
+    calculated_score = calculate_confidence(
         threat_score,
         reputation_score,
     )
@@ -137,21 +163,36 @@ def explain_confidence_score(
         reputation_score * 0.4
     )
 
+    reasons = [
+        (
+            f"60% threat score contribution: "
+            f"{weighted_threat:g}."
+        ),
+        (
+            f"40% reputation evidence contribution: "
+            f"{weighted_reputation:g}."
+        ),
+        (
+            f"Weighted result rounds to "
+            f"{calculated_score}/100."
+        ),
+    ]
+
+    value = calculated_score
+
+    if persisted_score is not None:
+        value = persisted_score
+
+        reasons.append(
+            (
+                f"Persisted confidence score: "
+                f"{persisted_score}/100."
+            )
+        )
+
     return ScoreExplanation(
-        value=score,
-        reasons=[
-            (
-                f"60% threat score contribution: "
-                f"{weighted_threat:g}."
-            ),
-            (
-                f"40% reputation evidence contribution: "
-                f"{weighted_reputation:g}."
-            ),
-            (
-                f"Weighted result rounds to {score}/100."
-            ),
-        ],
+        value=value,
+        reasons=reasons,
     )
 
 
@@ -231,10 +272,16 @@ def explain_tags(
 
 def explain_enrichment(
     indicator: ThreatIndicator,
+    persisted_reputation_score: int | None = None,
+    persisted_confidence_score: int | None = None,
 ) -> EnrichmentExplanation:
     """
     Produce a complete deterministic explanation
     of the local enrichment pipeline.
+
+    Persisted reputation and confidence scores may be
+    supplied when investigating an already-enriched
+    database indicator.
     """
 
     threat_score = explain_threat_score(
@@ -243,11 +290,13 @@ def explain_enrichment(
 
     reputation_score = explain_reputation_score(
         indicator,
+        persisted_score=persisted_reputation_score,
     )
 
     confidence_score = explain_confidence_score(
         threat_score.value,
         reputation_score.value,
+        persisted_score=persisted_confidence_score,
     )
 
     tag_reasons = explain_tags(

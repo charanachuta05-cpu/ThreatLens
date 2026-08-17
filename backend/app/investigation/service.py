@@ -13,6 +13,9 @@ from app.investigation.schemas import (
 )
 from app.models.alert import Alert
 from app.threat_intel.correlation import correlate_indicators
+from app.threat_intel.explanation import (
+    explain_enrichment,
+)
 from app.threat_intel.models import Indicator
 from app.threat_intel.schemas import ThreatIndicator
 
@@ -23,14 +26,6 @@ def _parse_tags(
     """
     Convert database CSV tags into a clean,
     deterministic list.
-
-    Example:
-
-        "ip,high,high-risk"
-
-    becomes:
-
-        ["ip", "high", "high-risk"]
     """
 
     if not tags:
@@ -61,9 +56,8 @@ def _build_threat_indicator(
     Convert a database Indicator into the normalized
     ThreatIndicator schema used by the correlation engine.
 
-    Persisted enrichment values are used so that
-    investigation results remain deterministic and
-    do not trigger provider calls.
+    Persisted enrichment values are used so that investigation
+    results remain deterministic and do not trigger provider calls.
     """
 
     return ThreatIndicator(
@@ -114,7 +108,7 @@ def investigate_indicator(
         )
 
     # --------------------------------------------------------
-    # Normalize indicator for correlation
+    # Normalize indicator for correlation and explanation
     # --------------------------------------------------------
 
     current_indicator = _build_threat_indicator(
@@ -122,12 +116,7 @@ def investigate_indicator(
     )
 
     # --------------------------------------------------------
-    # Retrieve alerts associated with this indicator.
-    # --------------------------------------------------------
-
-    # indicator_id is the authoritative relationship.
-    # The title/description fallback is retained only for
-    # historical alerts created before indicator_id existed.
+    # Retrieve alerts associated with this indicator
     # --------------------------------------------------------
 
     alerts = (
@@ -139,21 +128,21 @@ def investigate_indicator(
                     Alert.indicator_id.is_(None)
                     & (
                         Alert.title.contains(
-                        indicator.value,
+                            indicator.value,
+                        )
+                        | Alert.description.contains(
+                            indicator.value,
+                        )
                     )
-                    | Alert.description.contains(
-                        indicator.value,
-                    )
-                )
+                ),
             ),
-        ),
+        )
+        .order_by(
+            Alert.created_at.desc(),
+            Alert.id.desc(),
+        )
+        .all()
     )
-    .order_by(
-        Alert.created_at.desc(),
-        Alert.id.desc(),
-    )
-    .all()
-)
 
     # --------------------------------------------------------
     # Use persisted confidence score
@@ -163,6 +152,18 @@ def investigate_indicator(
     # --------------------------------------------------------
 
     confidence_score = indicator.confidence_score
+
+    # --------------------------------------------------------
+    # Generate deterministic enrichment explanation
+    #
+    # The persisted confidence score remains authoritative.
+    # --------------------------------------------------------
+
+    explanation = explain_enrichment(
+        current_indicator,
+        persisted_reputation_score=indicator.reputation_score,
+        persisted_confidence_score=confidence_score,
+    )
 
     # --------------------------------------------------------
     # Generate recommendation
@@ -239,6 +240,7 @@ def investigate_indicator(
             reputation_score=indicator.reputation_score,
             confidence_score=confidence_score,
         ),
+        explanation=explanation,
         tags=_parse_tags(
             indicator.tags,
         ),
