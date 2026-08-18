@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,41 @@ class Settings(BaseSettings):
 
     OTX_API_KEY: str = ""
     OTX_ENABLED: bool = False
+
+    @model_validator(mode="after")
+    def validate_security_configuration(self):
+        allowed_environments = {
+            "development",
+            "test",
+            "production",
+        }
+
+        environment = self.APP_ENV.strip().lower()
+        self.APP_ENV = environment
+
+        if environment not in allowed_environments:
+            raise ValueError(
+                "APP_ENV must be one of: development, test, production"
+            )
+
+        if environment == "production":
+            if self.DEBUG:
+                raise ValueError(
+                    "DEBUG must be false when APP_ENV is production"
+                )
+
+            if (
+                not self.SECRET_KEY
+                or len(self.SECRET_KEY) < 32
+                or self.SECRET_KEY
+                == "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+            ):
+                raise ValueError(
+                    "SECRET_KEY must be a secure value of at least 32 characters "
+                    "when APP_ENV is production"
+                )
+
+        return self
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
