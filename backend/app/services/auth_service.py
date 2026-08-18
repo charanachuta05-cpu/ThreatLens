@@ -34,7 +34,6 @@ def get_user_from_token(token: str, db: Session) -> User | None:
     )
 
     print("JWT user_id:", user_id)
-    print("DB URL:", settings.DATABASE_URL)
     print("Found user:", user)
 
     return user
