@@ -33,7 +33,5 @@ def get_user_from_token(token: str, db: Session) -> User | None:
         .first()
     )
 
-    print("JWT user_id:", user_id)
-    print("Found user:", user)
 
     return user

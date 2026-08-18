@@ -23,7 +23,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         token = websocket.query_params.get("token")
-        print("Token received:", token)
 
         if not token:
             print("❌ No token provided")
@@ -31,7 +30,6 @@ async def websocket_endpoint(websocket: WebSocket):
             return
 
         user = verify_websocket_token(token, db)
-        print("Authenticated user:", user)
 
         if user is None:
             print("❌ Invalid token")
