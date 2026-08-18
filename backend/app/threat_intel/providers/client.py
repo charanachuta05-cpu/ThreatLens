@@ -1,6 +1,13 @@
 import httpx
 
 
+class ThreatProviderClientError(Exception):
+    """
+    Safe application-level error raised when an external
+    threat intelligence provider request fails.
+    """
+
+
 class ThreatProviderClient:
     """
     Shared asynchronous HTTP client for
@@ -24,13 +31,9 @@ class ThreatProviderClient:
         """
         Perform an asynchronous GET request.
 
-        Raises:
-            ValueError:
-                When the provider API key is missing.
-            httpx.HTTPError:
-                When the HTTP request fails.
-            ValueError:
-                When the response body is not valid JSON.
+        Provider-specific HTTP failures are converted into a
+        safe application-level exception so raw external
+        response details cannot propagate beyond this boundary.
         """
 
         if not self.api_key:
@@ -45,22 +48,35 @@ class ThreatProviderClient:
             connect=self.timeout,
         )
 
-        async with httpx.AsyncClient(
-            timeout=timeout,
-        ) as client:
-            response = await client.get(
-                url,
-                headers=request_headers,
-                params=params,
-            )
-
-            response.raise_for_status()
-
-            data = response.json()
-
-            if not isinstance(data, dict):
-                raise ValueError(
-                    "Provider response must be a JSON object."
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+            ) as client:
+                response = await client.get(
+                    url,
+                    headers=request_headers,
+                    params=params,
                 )
 
-            return data
+                response.raise_for_status()
+
+                data = response.json()
+
+        except httpx.HTTPError as exc:
+            raise ThreatProviderClientError(
+                "Threat intelligence provider request failed."
+            ) from exc
+
+        except ValueError as exc:
+            raise ThreatProviderClientError(
+                "Threat intelligence provider returned "
+                "an invalid response."
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ThreatProviderClientError(
+                "Threat intelligence provider returned "
+                "an invalid response."
+            )
+
+        return data

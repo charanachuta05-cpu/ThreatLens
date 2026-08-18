@@ -3,7 +3,131 @@ import pytest
 
 from app.threat_intel.providers.client import (
     ThreatProviderClient,
+    ThreatProviderClientError,
 )
+
+@pytest.mark.asyncio
+async def test_client_converts_http_error_to_safe_provider_error(
+    monkeypatch,
+):
+    class FakeResponse:
+        def raise_for_status(self):
+            request = httpx.Request(
+                "GET",
+                "https://example.com",
+            )
+
+            response = httpx.Response(
+                404,
+                request=request,
+            )
+
+            raise httpx.HTTPStatusError(
+                "404 Not Found: SECRET_PROVIDER_DETAILS",
+                request=request,
+                response=response,
+            )
+
+        def json(self):
+            return {}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            pass
+
+        async def get(
+            self,
+            url,
+            headers=None,
+            params=None,
+        ):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        FakeAsyncClient,
+    )
+
+    client = ThreatProviderClient(
+        api_key="test-key"
+    )
+
+    with pytest.raises(
+        ThreatProviderClientError,
+        match="Threat intelligence provider request failed.",
+    ) as exc_info:
+        await client.get(
+            "https://example.com"
+        )
+
+    assert "SECRET_PROVIDER_DETAILS" not in str(
+        exc_info.value
+    )
+
+@pytest.mark.asyncio
+async def test_client_rejects_non_object_json_response(
+    monkeypatch,
+):
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return ["unexpected", "response"]
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            pass
+
+        async def get(
+            self,
+            url,
+            headers=None,
+            params=None,
+        ):
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        FakeAsyncClient,
+    )
+
+    client = ThreatProviderClient(
+        api_key="test-key"
+    )
+
+    with pytest.raises(
+        ThreatProviderClientError,
+        match="Threat intelligence provider returned "
+        "an invalid response.",
+    ):
+        await client.get(
+            "https://example.com"
+        )
 
 
 @pytest.mark.asyncio
@@ -91,7 +215,7 @@ async def test_client_returns_json(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_client_propagates_http_error(
+async def test_client_converts_http_error_to_safe_provider_error(
     monkeypatch,
 ):
     class FakeResponse:
@@ -149,7 +273,8 @@ async def test_client_propagates_http_error(
     )
 
     with pytest.raises(
-        httpx.HTTPStatusError
+        ThreatProviderClientError,
+        match="Threat intelligence provider request failed.",
     ):
         await client.get(
             "https://example.com"
