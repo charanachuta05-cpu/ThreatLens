@@ -15,6 +15,7 @@ from app.core.exceptions import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.logging.logger import logger
 
 from app.api.routes import (
     admin,
@@ -183,8 +184,9 @@ def health():
         }
 
     except Exception as exc:
+        logger.exception("Health check database connection failed")
+
         return {
             "status": "unhealthy",
             "database": "disconnected",
-            "error": str(exc),
         }
