@@ -448,3 +448,71 @@
   outline: 2px solid #60a5fa;
   outline-offset: 2px;
 }
+
+/* =========================================
+   ALERT EDIT WORKFLOW
+========================================= */
+
+.alert-selection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.alert-edit-panel {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(220px, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #1e293b;
+}
+
+.alert-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert-edit-field label {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.alert-edit-field select {
+  padding: 8px 10px;
+  border: 1px solid #334155;
+  border-radius: 5px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 10px;
+}
+
+.alert-edit-error {
+  grid-column: 1 / -1;
+  color: #f87171;
+  font-size: 10px;
+}
+
+.alert-edit-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.alert-edit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (max-width: 700px) {
+  .alert-edit-panel {
+    grid-template-columns: 1fr;
+  }
+}

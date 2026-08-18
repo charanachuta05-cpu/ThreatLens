@@ -12,7 +12,9 @@ import {
   Clock,
   ExternalLink,
   Filter,
+  Pencil,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   X,
@@ -22,8 +24,17 @@ import axios from "axios";
 
 import {
   getAlerts,
+  updateAlert,
   type Alert,
+  type AlertUpdate,
 } from "../api/alerts";
+
+import {
+  getAssignableUsers,
+  type AssignableUser,
+} from "../api/users";
+
+import { useAuth } from "../context/useAuth";
 
 import "./Alerts.css";
 
@@ -32,6 +43,12 @@ interface AlertFilters {
   severity?: string;
   status?: string;
   source?: string;
+}
+
+interface AlertEditState {
+  severity: string;
+  status: string;
+  assignedTo: number | null;
 }
 
 function formatDate(
@@ -131,8 +148,40 @@ function getApiErrorMessage(
   }
 }
 
+function getMutationErrorMessage(
+  error: unknown,
+): string {
+  if (!axios.isAxiosError(error)) {
+    return "Unable to update the alert.";
+  }
+
+  switch (error.response?.status) {
+    case 401:
+      return "Your session has expired. Please log in again.";
+
+    case 403:
+      return "You do not have permission to modify alerts.";
+
+    case 404:
+      return (
+        "The alert or assigned user could not be found."
+      );
+
+    case 422:
+      return "The alert changes are invalid.";
+
+    default:
+      return "Unable to update the alert.";
+  }
+}
+
 function Alerts() {
   const navigate = useNavigate();
+  const { role } = useAuth();
+
+  const canEditAlerts =
+    role === "admin" ||
+    role === "analyst";
 
   const [alerts, setAlerts] =
     useState<Alert[]>([]);
@@ -159,15 +208,39 @@ function Alerts() {
     useState("");
 
   const [
+    assignableUsers,
+    setAssignableUsers,
+  ] = useState<AssignableUser[]>([]);
+
+  const [
     selectedAlertId,
     setSelectedAlertId,
   ] = useState<number | null>(null);
 
-  /*
-   * =========================================
-   * FILTER STATE
-   * =========================================
-   */
+  const [
+    editingAlertId,
+    setEditingAlertId,
+  ] = useState<number | null>(null);
+
+  const [
+    editState,
+    setEditState,
+  ] = useState<AlertEditState | null>(null);
+
+  const [
+    savingAlert,
+    setSavingAlert,
+  ] = useState(false);
+
+  const [
+    loadingAssignableUsers,
+    setLoadingAssignableUsers,
+  ] = useState(false);
+
+  const [
+    mutationError,
+    setMutationError,
+  ] = useState("");
 
   const hasFilters =
     Boolean(
@@ -206,25 +279,39 @@ function Alerts() {
           await getAlerts({
             skip: 0,
             limit: 100,
-
             search:
               filters.search ||
               undefined,
-
             severity:
               filters.severity ||
               undefined,
-
             status:
               filters.status ||
               undefined,
-
             source:
               filters.source ||
               undefined,
           });
 
         setAlerts(data);
+
+        setSelectedAlertId(
+          (currentId) => {
+            if (
+              currentId === null
+            ) {
+              return null;
+            }
+
+            return data.some(
+              (alert) =>
+                alert.id ===
+                currentId,
+            )
+              ? currentId
+              : null;
+          },
+        );
       } catch (err) {
         console.error(
           "Failed to load alerts:",
@@ -244,13 +331,52 @@ function Alerts() {
 
   /*
    * =========================================
+   * LOAD ASSIGNABLE USERS
+   *
+   * Triggered by the Edit button rather than
+   * an effect, avoiding unnecessary API calls
+   * for viewers and preventing the React
+   * set-state-in-effect lint violation.
+   * =========================================
+   */
+
+  const loadAssignableUsers =
+    useCallback(async () => {
+      if (!canEditAlerts) {
+        return false;
+      }
+
+      try {
+        setLoadingAssignableUsers(true);
+        setMutationError("");
+
+        const users =
+          await getAssignableUsers();
+
+        setAssignableUsers(users);
+
+        return true;
+      } catch (err) {
+        console.error(
+          "Failed to load assignable users:",
+          err,
+        );
+
+        setMutationError(
+          "Unable to load assignable users.",
+        );
+
+        return false;
+      } finally {
+        setLoadingAssignableUsers(
+          false,
+        );
+      }
+    }, [canEditAlerts]);
+
+  /*
+   * =========================================
    * INITIAL LOAD + FILTER APPLICATION
-   *
-   * A single effect handles both operations.
-   *
-   * The timeout prevents the React
-   * set-state-in-effect lint violation and
-   * debounces filter changes.
    * =========================================
    */
 
@@ -270,15 +396,12 @@ function Alerts() {
             search:
               search.trim() ||
               undefined,
-
             severity:
               severity ||
               undefined,
-
             status:
               status ||
               undefined,
-
             source:
               source.trim() ||
               undefined,
@@ -303,11 +426,6 @@ function Alerts() {
   /*
    * =========================================
    * VISIBLE ALERTS
-   *
-   * Backend filtering is authoritative.
-   * This local filtering provides an additional
-   * safety layer if the backend returns broader
-   * results.
    * =========================================
    */
 
@@ -432,6 +550,9 @@ function Alerts() {
     setStatus("");
     setSource("");
     setSelectedAlertId(null);
+    setEditingAlertId(null);
+    setEditState(null);
+    setMutationError("");
   }
 
   function refreshAlerts() {
@@ -440,15 +561,12 @@ function Alerts() {
         search:
           search.trim() ||
           undefined,
-
         severity:
           severity ||
           undefined,
-
         status:
           status ||
           undefined,
-
         source:
           source.trim() ||
           undefined,
@@ -462,10 +580,6 @@ function Alerts() {
   /*
    * =========================================
    * INVESTIGATION NAVIGATION
-   *
-   * Investigations currently supports:
-   *
-   * /investigations?indicator=42
    * =========================================
    */
 
@@ -488,6 +602,142 @@ function Alerts() {
 
   /*
    * =========================================
+   * EDIT MODE
+   * =========================================
+   */
+
+  async function beginEditing(
+    alert: Alert,
+  ) {
+    if (!canEditAlerts) {
+      setMutationError(
+        "You do not have permission to modify alerts.",
+      );
+
+      return;
+    }
+
+    setMutationError("");
+
+    const usersLoaded =
+      await loadAssignableUsers();
+
+    if (!usersLoaded) {
+      return;
+    }
+
+    setEditingAlertId(alert.id);
+
+    setEditState({
+      severity:
+        alert.severity,
+      status:
+        alert.status,
+      assignedTo:
+        alert.assigned_to,
+    });
+  }
+
+  function cancelEditing() {
+    if (savingAlert) {
+      return;
+    }
+
+    setEditingAlertId(null);
+    setEditState(null);
+    setMutationError("");
+  }
+
+  /*
+   * =========================================
+   * SAVE ALERT
+   * =========================================
+   */
+
+  async function saveAlertChanges(
+    alert: Alert,
+  ) {
+    if (
+      !canEditAlerts ||
+      !editState
+    ) {
+      return;
+    }
+
+    const updates: AlertUpdate = {};
+
+    if (
+      editState.severity !==
+      alert.severity
+    ) {
+      updates.severity =
+        editState.severity;
+    }
+
+    if (
+      editState.status !==
+      alert.status
+    ) {
+      updates.status =
+        editState.status;
+    }
+
+    if (
+      editState.assignedTo !==
+      alert.assigned_to
+    ) {
+      updates.assigned_to =
+        editState.assignedTo;
+    }
+
+    if (
+      Object.keys(updates).length ===
+      0
+    ) {
+      setEditingAlertId(null);
+      setEditState(null);
+      return;
+    }
+
+    try {
+      setSavingAlert(true);
+      setMutationError("");
+
+      const updatedAlert =
+        await updateAlert(
+          alert.id,
+          updates,
+        );
+
+      setAlerts(
+        (currentAlerts) =>
+          currentAlerts.map(
+            (currentAlert) =>
+              currentAlert.id ===
+              updatedAlert.id
+                ? updatedAlert
+                : currentAlert,
+          ),
+      );
+
+      setEditingAlertId(null);
+      setEditState(null);
+    } catch (err) {
+      console.error(
+        "Failed to update alert:",
+        err,
+      );
+
+      setMutationError(
+        getMutationErrorMessage(err),
+      );
+    } finally {
+      setSavingAlert(false);
+    }
+  }
+
+  /*
+   * =========================================
    * SELECTED ALERT
    * =========================================
    */
@@ -505,6 +755,17 @@ function Alerts() {
         selectedAlertId,
       ],
     );
+
+  const isEditingSelectedAlert =
+    selectedAlert !== null &&
+    editingAlertId ===
+      selectedAlert.id;
+
+  /*
+   * =========================================
+   * RENDER
+   * =========================================
+   */
 
   return (
     <div className="alerts-page">
@@ -540,7 +801,8 @@ function Alerts() {
           }
           disabled={
             loading ||
-            refreshing
+            refreshing ||
+            savingAlert
           }
           aria-label="Refresh alerts"
         >
@@ -565,9 +827,7 @@ function Alerts() {
 
       <div className="alerts-summary">
         <div className="alert-summary-card">
-          <ShieldAlert
-            size={20}
-          />
+          <ShieldAlert size={20} />
 
           <div>
             <span>
@@ -581,9 +841,7 @@ function Alerts() {
         </div>
 
         <div className="alert-summary-card critical">
-          <AlertTriangle
-            size={20}
-          />
+          <AlertTriangle size={20} />
 
           <div>
             <span>
@@ -597,9 +855,7 @@ function Alerts() {
         </div>
 
         <div className="alert-summary-card high">
-          <AlertTriangle
-            size={20}
-          />
+          <AlertTriangle size={20} />
 
           <div>
             <span>
@@ -613,9 +869,7 @@ function Alerts() {
         </div>
 
         <div className="alert-summary-card">
-          <Clock
-            size={20}
-          />
+          <Clock size={20} />
 
           <div>
             <span>
@@ -629,9 +883,7 @@ function Alerts() {
         </div>
 
         <div className="alert-summary-card">
-          <CheckCircle2
-            size={20}
-          />
+          <CheckCircle2 size={20} />
 
           <div>
             <span>
@@ -662,8 +914,6 @@ function Alerts() {
         </div>
 
         <div className="filter-grid">
-          {/* Search */}
-
           <div className="filter-input">
             <Search
               size={15}
@@ -696,8 +946,6 @@ function Alerts() {
             )}
           </div>
 
-          {/* Severity */}
-
           <select
             value={severity}
             onChange={(event) =>
@@ -728,8 +976,6 @@ function Alerts() {
             </option>
           </select>
 
-          {/* Status */}
-
           <select
             value={status}
             onChange={(event) =>
@@ -755,8 +1001,6 @@ function Alerts() {
               Resolved
             </option>
           </select>
-
-          {/* Source */}
 
           <div className="filter-input">
             <input
@@ -784,8 +1028,6 @@ function Alerts() {
               </button>
             )}
           </div>
-
-          {/* Clear */}
 
           {hasFilters && (
             <button
@@ -835,8 +1077,6 @@ function Alerts() {
           </div>
         </div>
 
-        {/* Loading */}
-
         {loading && (
           <div
             className="alerts-state"
@@ -853,8 +1093,6 @@ function Alerts() {
             </span>
           </div>
         )}
-
-        {/* Error */}
 
         {!loading && error && (
           <div
@@ -879,15 +1117,12 @@ function Alerts() {
                     search:
                       search.trim() ||
                       undefined,
-
                     severity:
                       severity ||
                       undefined,
-
                     status:
                       status ||
                       undefined,
-
                     source:
                       source.trim() ||
                       undefined,
@@ -899,8 +1134,6 @@ function Alerts() {
             </button>
           </div>
         )}
-
-        {/* Empty */}
 
         {!loading &&
           !error &&
@@ -931,8 +1164,6 @@ function Alerts() {
               )}
             </div>
           )}
-
-        {/* Alert Table */}
 
         {!loading &&
           !error &&
@@ -1003,8 +1234,6 @@ function Alerts() {
                             )
                           }
                         >
-                          {/* Alert */}
-
                           <td>
                             <div className="alert-title">
                               <strong>
@@ -1023,8 +1252,6 @@ function Alerts() {
                             </div>
                           </td>
 
-                          {/* Severity */}
-
                           <td>
                             <span
                               className={severityClass(
@@ -1036,8 +1263,6 @@ function Alerts() {
                               }
                             </span>
                           </td>
-
-                          {/* Status */}
 
                           <td>
                             <span
@@ -1051,16 +1276,12 @@ function Alerts() {
                             </span>
                           </td>
 
-                          {/* Source */}
-
                           <td>
                             <span className="source-text">
                               {alert.source ||
                                 "Unknown"}
                             </span>
                           </td>
-
-                          {/* Created */}
 
                           <td>
                             <span className="date-text">
@@ -1069,8 +1290,6 @@ function Alerts() {
                               )}
                             </span>
                           </td>
-
-                          {/* Investigation */}
 
                           <td>
                             {hasIndicator ? (
@@ -1117,62 +1336,330 @@ function Alerts() {
       </div>
 
       {/* =================================
-          SELECTED ALERT DETAILS
+          MUTATION ERROR
+      ================================= */}
+
+      {mutationError && (
+        <div
+          className="alerts-state error"
+          role="alert"
+        >
+          <AlertTriangle
+            size={18}
+            aria-hidden="true"
+          />
+
+          <span>
+            {mutationError}
+          </span>
+
+          <button
+            type="button"
+            className="retry-button"
+            onClick={() =>
+              setMutationError("")
+            }
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* =================================
+          SELECTED ALERT
       ================================= */}
 
       {selectedAlert && (
         <div className="alert-selection">
-          <div>
-            <span>
-              Selected Alert
-            </span>
+          <div className="alert-selection-header">
+            <div>
+              <span>
+                Selected Alert
+              </span>
 
-            <strong>
-              {selectedAlert.title}
-            </strong>
+              <strong>
+                {selectedAlert.title}
+              </strong>
+            </div>
+
+            <div className="alert-selection-meta">
+              <span
+                className={severityClass(
+                  selectedAlert.severity,
+                )}
+              >
+                {selectedAlert.severity}
+              </span>
+
+              <span
+                className={`status-badge ${statusClass(
+                  selectedAlert.status,
+                )}`}
+              >
+                {formatStatus(
+                  selectedAlert.status,
+                )}
+              </span>
+
+              {selectedAlert.indicator_id !==
+                null &&
+                selectedAlert.indicator_id !==
+                  undefined && (
+                  <button
+                    type="button"
+                    className="investigation-button"
+                    onClick={() =>
+                      openInvestigation(
+                        selectedAlert,
+                      )
+                    }
+                  >
+                    <ExternalLink
+                      size={14}
+                      aria-hidden="true"
+                    />
+
+                    Open Investigation
+                  </button>
+                )}
+
+              {canEditAlerts &&
+                !isEditingSelectedAlert && (
+                  <button
+                    type="button"
+                    className="investigation-button"
+                    onClick={() =>
+                      void beginEditing(
+                        selectedAlert,
+                      )
+                    }
+                    disabled={
+                      loadingAssignableUsers
+                    }
+                  >
+                    <Pencil
+                      size={14}
+                      aria-hidden="true"
+                    />
+
+                    {loadingAssignableUsers
+                      ? "Loading..."
+                      : "Edit Alert"}
+                  </button>
+                )}
+            </div>
           </div>
 
-          <div className="alert-selection-meta">
-            <span
-              className={severityClass(
-                selectedAlert.severity,
-              )}
-            >
-              {selectedAlert.severity}
-            </span>
+          {/* =================================
+              EDIT PANEL
+          ================================= */}
 
-            <span
-              className={`status-badge ${statusClass(
-                selectedAlert.status,
-              )}`}
-            >
-              {formatStatus(
-                selectedAlert.status,
-              )}
-            </span>
+          {isEditingSelectedAlert &&
+            editState && (
+              <div
+                className="alert-edit-panel"
+                aria-label="Edit alert"
+              >
+                <div className="alert-edit-field">
+                  <label htmlFor="alert-severity">
+                    Severity
+                  </label>
 
-            {selectedAlert.indicator_id !==
-              null &&
-              selectedAlert.indicator_id !==
-                undefined && (
-                <button
-                  type="button"
-                  className="investigation-button"
-                  onClick={() =>
-                    openInvestigation(
-                      selectedAlert,
-                    )
-                  }
-                >
-                  <ExternalLink
-                    size={14}
-                    aria-hidden="true"
-                  />
+                  <select
+                    id="alert-severity"
+                    value={
+                      editState.severity
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setEditState(
+                        (
+                          current,
+                        ) =>
+                          current
+                            ? {
+                                ...current,
+                                severity:
+                                  event
+                                    .target
+                                    .value,
+                              }
+                            : current,
+                      )
+                    }
+                    disabled={
+                      savingAlert
+                    }
+                  >
+                    <option value="CRITICAL">
+                      Critical
+                    </option>
 
-                  Open Investigation
-                </button>
-              )}
-          </div>
+                    <option value="HIGH">
+                      High
+                    </option>
+
+                    <option value="MEDIUM">
+                      Medium
+                    </option>
+
+                    <option value="LOW">
+                      Low
+                    </option>
+                  </select>
+                </div>
+
+                <div className="alert-edit-field">
+                  <label htmlFor="alert-status">
+                    Status
+                  </label>
+
+                  <select
+                    id="alert-status"
+                    value={
+                      editState.status
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setEditState(
+                        (
+                          current,
+                        ) =>
+                          current
+                            ? {
+                                ...current,
+                                status:
+                                  event
+                                    .target
+                                    .value,
+                              }
+                            : current,
+                      )
+                    }
+                    disabled={
+                      savingAlert
+                    }
+                  >
+                    <option value="OPEN">
+                      Open
+                    </option>
+
+                    <option value="IN_PROGRESS">
+                      In Progress
+                    </option>
+
+                    <option value="RESOLVED">
+                      Resolved
+                    </option>
+                  </select>
+                </div>
+
+                <div className="alert-edit-field">
+                  <label htmlFor="alert-assignee">
+                    Assigned User
+                  </label>
+
+                  <select
+                    id="alert-assignee"
+                    value={
+                      editState.assignedTo ??
+                      ""
+                    }
+                    onChange={(
+                      event,
+                    ) => {
+                      const value =
+                        event.target
+                          .value;
+
+                      setEditState(
+                        (
+                          current,
+                        ) =>
+                          current
+                            ? {
+                                ...current,
+                                assignedTo:
+                                  value
+                                    ? Number(
+                                        value,
+                                      )
+                                    : null,
+                              }
+                            : current,
+                      );
+                    }}
+                    disabled={
+                      savingAlert
+                    }
+                  >
+                    <option value="">
+                      Unassigned
+                    </option>
+
+                    {assignableUsers.map(
+                      (user) => (
+                        <option
+                          key={
+                            user.id
+                          }
+                          value={
+                            user.id
+                          }
+                        >
+                          {user.username} (
+                          {user.role})
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </div>
+
+                <div className="alert-edit-actions">
+                  <button
+                    type="button"
+                    className="clear-filters-button"
+                    onClick={
+                      cancelEditing
+                    }
+                    disabled={
+                      savingAlert
+                    }
+                  >
+                    <X
+                      size={14}
+                      aria-hidden="true"
+                    />
+
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    className="investigation-button"
+                    onClick={() =>
+                      void saveAlertChanges(
+                        selectedAlert,
+                      )
+                    }
+                    disabled={
+                      savingAlert
+                    }
+                  >
+                    <Save
+                      size={14}
+                      aria-hidden="true"
+                    />
+
+                    {savingAlert
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            )}
         </div>
       )}
     </div>

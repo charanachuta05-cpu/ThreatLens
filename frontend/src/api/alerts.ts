@@ -23,6 +23,15 @@ export interface AlertQuery {
   source?: string;
 }
 
+export interface AlertUpdate {
+  title?: string;
+  description?: string;
+  severity?: string;
+  status?: string;
+  source?: string;
+  assigned_to?: number | null;
+}
+
 export async function getAlerts(
   params: AlertQuery = {},
 ): Promise<Alert[]> {
@@ -32,6 +41,19 @@ export async function getAlerts(
       {
         params,
       },
+    );
+
+  return response.data;
+}
+
+export async function updateAlert(
+  alertId: number,
+  alertData: AlertUpdate,
+): Promise<Alert> {
+  const response =
+    await apiClient.put<Alert>(
+      `/alerts/${alertId}`,
+      alertData,
     );
 
   return response.data;
