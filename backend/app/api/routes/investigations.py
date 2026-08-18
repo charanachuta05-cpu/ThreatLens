@@ -44,5 +44,5 @@ def investigate(
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
-            detail=str(exc),
+            detail="Indicator not found.",
         ) from exc

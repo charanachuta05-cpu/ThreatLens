@@ -930,3 +930,43 @@ def test_investigation_returns_tag_reasons(
 
     finally:
         delete_test_indicator()
+
+
+def test_investigation_does_not_expose_internal_valueerror(
+    client,
+    admin_headers,
+    monkeypatch,
+):
+    from app.api.routes import investigations
+
+    sensitive_message = (
+        "SECRET_DATABASE_DETAILS: "
+        "postgres://internal-db.example.com/super-secret"
+    )
+
+    def raise_internal_error(db, indicator_id):
+        raise ValueError(sensitive_message)
+
+    monkeypatch.setattr(
+        investigations,
+        "investigate_indicator",
+        raise_internal_error,
+    )
+
+    response = client.get(
+        "/investigations/999999",
+        headers=admin_headers,
+    )
+
+    assert response.status_code == 404
+
+    data = response.json()
+
+    assert data["success"] is False
+    assert data["error"]["code"] == 404
+    assert data["error"]["message"] == "Indicator not found."
+
+    assert sensitive_message not in response.text
+    assert "SECRET_DATABASE_DETAILS" not in response.text
+    assert "super-secret" not in response.text
+    assert "internal-db.example.com" not in response.text
