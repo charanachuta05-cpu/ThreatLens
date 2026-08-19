@@ -85,3 +85,18 @@ def test_environment_name_is_normalized():
 def test_invalid_environment_is_rejected():
     with pytest.raises(ValidationError, match="APP_ENV"):
         make_settings(APP_ENV="staging")
+
+        
+
+def test_threat_intelligence_ingest_interval_has_default():
+    settings = make_settings()
+
+    assert settings.THREAT_INTEL_INGEST_INTERVAL_MINUTES == 5
+
+
+def test_threat_intelligence_ingest_interval_can_be_configured():
+    settings = make_settings(
+        THREAT_INTEL_INGEST_INTERVAL_MINUTES=10,
+    )
+
+    assert settings.THREAT_INTEL_INGEST_INTERVAL_MINUTES == 10  

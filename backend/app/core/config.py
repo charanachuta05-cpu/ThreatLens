@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     OTX_API_KEY: str = ""
     OTX_ENABLED: bool = False
 
+    THREAT_INTEL_INGEST_INTERVAL_MINUTES: int = 5
+
     @model_validator(mode="after")
     def validate_security_configuration(self):
         allowed_environments = {
