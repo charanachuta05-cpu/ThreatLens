@@ -389,3 +389,63 @@ async def test_client_uses_configured_timeout(monkeypatch):
     assert timeout.read == 7.5
     assert timeout.write == 7.5
     assert timeout.pool == 7.5
+
+@pytest.mark.asyncio
+async def test_client_converts_timeout_to_safe_provider_error(
+    monkeypatch,
+):
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            pass
+
+        async def get(
+            self,
+            url,
+            headers=None,
+            params=None,
+        ):
+            request = httpx.Request(
+                "GET",
+                url,
+            )
+
+            raise httpx.ReadTimeout(
+                "SECRET_PROVIDER_TIMEOUT_DETAILS",
+                request=request,
+            )
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        FakeAsyncClient,
+    )
+
+    client = ThreatProviderClient(
+        api_key="test-key",
+    )
+
+    with pytest.raises(
+        ThreatProviderClientError,
+        match=(
+            "Threat intelligence provider "
+            "request timed out."
+        ),
+    ) as exc_info:
+        await client.get(
+            "https://example.com",
+        )
+
+    assert "SECRET_PROVIDER_TIMEOUT_DETAILS" not in str(
+        exc_info.value
+    )

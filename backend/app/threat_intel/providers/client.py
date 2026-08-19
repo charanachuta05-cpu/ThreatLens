@@ -62,6 +62,11 @@ class ThreatProviderClient:
 
                 data = response.json()
 
+        except httpx.TimeoutException as exc:
+            raise ThreatProviderClientError(
+                "Threat intelligence provider request timed out."
+            ) from exc
+
         except httpx.HTTPError as exc:
             raise ThreatProviderClientError(
                 "Threat intelligence provider request failed."
