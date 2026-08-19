@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.threat_intel.providers.base import ThreatProvider
 from app.threat_intel.providers.client import ThreatProviderClient
 from app.threat_intel.schemas import ThreatIndicator
@@ -14,7 +15,10 @@ class VirusTotalProvider(ThreatProvider):
         self,
         api_key: str,
     ):
-        self.client = ThreatProviderClient(api_key)
+        self.client = ThreatProviderClient(
+            api_key,
+            timeout=settings.THREAT_PROVIDER_TIMEOUT,
+        )
 
     @property
     def provider_name(self) -> str:

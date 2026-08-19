@@ -91,3 +91,32 @@ def test_virustotal_provider_is_not_registered_when_disabled(
         )
         for provider in providers
     )
+
+
+def test_virustotal_provider_uses_configured_timeout(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "app.threat_intel.providers.factory.settings.VIRUSTOTAL_ENABLED",
+        True,
+    )
+
+    monkeypatch.setattr(
+        "app.threat_intel.providers.factory.settings.VIRUSTOTAL_API_KEY",
+        "test-api-key",
+    )
+
+    monkeypatch.setattr(
+        "app.threat_intel.providers.factory.settings.THREAT_PROVIDER_TIMEOUT",
+        7.5,
+    )
+
+    providers = get_providers()
+
+    virustotal = next(
+        provider
+        for provider in providers
+        if isinstance(provider, VirusTotalProvider)
+    )
+
+    assert virustotal.client.timeout == 7.5

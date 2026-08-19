@@ -335,3 +335,57 @@ async def test_client_uses_default_headers_when_none(
     assert result == {
         "ok": True
     }
+
+@pytest.mark.asyncio
+async def test_client_uses_configured_timeout(monkeypatch):
+    captured = {}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(
+            self,
+            exc_type,
+            exc_value,
+            traceback,
+        ):
+            pass
+
+        async def get(
+            self,
+            url,
+            headers=None,
+            params=None,
+        ):
+            class FakeResponse:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"status": "ok"}
+
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        FakeAsyncClient,
+    )
+
+    client = ThreatProviderClient(
+        api_key="test-key",
+        timeout=7.5,
+    )
+
+    await client.get("https://example.com")
+
+    timeout = captured["timeout"]
+
+    assert timeout.connect == 7.5
+    assert timeout.read == 7.5
+    assert timeout.write == 7.5
+    assert timeout.pool == 7.5

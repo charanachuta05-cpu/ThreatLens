@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     OTX_API_KEY: str = ""
     OTX_ENABLED: bool = False
 
+    # Threat Intelligence
+    VIRUSTOTAL_API_KEY: str = ""
+    VIRUSTOTAL_ENABLED: bool = False
+    THREAT_PROVIDER_TIMEOUT: float = 20.0
+
     @model_validator(mode="after")
     def validate_security_configuration(self):
         allowed_environments = {
