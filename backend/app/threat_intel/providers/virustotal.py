@@ -24,6 +24,27 @@ class VirusTotalProvider(ThreatProvider):
     def provider_name(self) -> str:
         return "VirusTotal"
 
+    @staticmethod
+    def _calculate_severity(
+        malicious: int,
+        suspicious: int,
+    ) -> str:
+        """
+        Calculate normalized severity from VirusTotal
+        analysis statistics.
+        """
+
+        if malicious >= 15:
+            return "CRITICAL"
+
+        if malicious >= 5:
+            return "HIGH"
+
+        if malicious > 0 or suspicious > 0:
+            return "MEDIUM"
+
+        return "LOW"
+
     def _normalize_report(
         self,
         data: dict,
@@ -32,14 +53,49 @@ class VirusTotalProvider(ThreatProvider):
         """
         Convert a VirusTotal response into the
         normalized ThreatIndicator schema.
+
+        Malformed provider responses are converted into
+        a safe ValueError rather than leaking structural
+        exceptions such as KeyError or AttributeError.
         """
 
-        attributes = data.get("attributes", {})
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
+        indicator_id = data.get("id")
+
+        if not isinstance(
+            indicator_id,
+            str,
+        ) or not indicator_id.strip():
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
+        attributes = data.get("attributes")
+
+        if not isinstance(
+            attributes,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
 
         stats = attributes.get(
             "last_analysis_stats",
             {},
         )
+
+        if not isinstance(
+            stats,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
 
         malicious = stats.get(
             "malicious",
@@ -51,44 +107,89 @@ class VirusTotalProvider(ThreatProvider):
             0,
         )
 
-        if malicious >= 15:
-            severity = "CRITICAL"
+        harmless = stats.get(
+            "harmless",
+            0,
+        )
 
-        elif malicious >= 5:
-            severity = "HIGH"
-
-        elif malicious > 0 or suspicious > 0:
-            severity = "MEDIUM"
-
-        else:
-            severity = "LOW"
+        if not all(
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+            for value in (
+                malicious,
+                suspicious,
+                harmless,
+            )
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
 
         reputation = attributes.get(
             "reputation",
             0,
         )
 
+        if not isinstance(
+            reputation,
+            (int, float),
+        ) or isinstance(
+            reputation,
+            bool,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
         reputation = max(
             0,
-            min(reputation, 100),
+            min(
+                int(reputation),
+                100,
+            ),
+        )
+
+        tags = attributes.get(
+            "tags",
+            [],
+        )
+
+        if tags is None:
+            tags = []
+
+        if not isinstance(
+            tags,
+            list,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
+        normalized_tags = [
+            tag.strip()
+            for tag in tags
+            if isinstance(
+                tag,
+                str,
+            ) and tag.strip()
+        ]
+
+        severity = self._calculate_severity(
+            malicious=malicious,
+            suspicious=suspicious,
         )
 
         return ThreatIndicator(
-            value=data["id"],
-            type=indicator_type,
+            value=indicator_id,
+            type=indicator_type.upper(),
             source=self.provider_name,
             severity=severity,
             reputation=reputation,
             malicious=malicious,
             suspicious=suspicious,
-            harmless=stats.get(
-                "harmless",
-                0,
-            ),
-            tags=attributes.get(
-                "tags",
-                [],
-            ),
+            harmless=harmless,
+            tags=normalized_tags,
         )
 
     async def get_ip_report(
@@ -110,8 +211,16 @@ class VirusTotalProvider(ThreatProvider):
             },
         )
 
+        if not isinstance(
+            response,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
         return self._normalize_report(
-            response["data"],
+            response.get("data"),
             "IP",
         )
 
@@ -134,8 +243,16 @@ class VirusTotalProvider(ThreatProvider):
             },
         )
 
+        if not isinstance(
+            response,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
         return self._normalize_report(
-            response["data"],
+            response.get("data"),
             "DOMAIN",
         )
 
@@ -147,9 +264,8 @@ class VirusTotalProvider(ThreatProvider):
         Retrieve and normalize a VirusTotal
         URL report.
 
-        VirusTotal URL objects use their URL
-        identifier rather than the raw URL in
-        the API path.
+        VirusTotal expects the URL object ID for
+        this endpoint.
         """
 
         response = await self.client.get(
@@ -162,8 +278,16 @@ class VirusTotalProvider(ThreatProvider):
             },
         )
 
+        if not isinstance(
+            response,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
         return self._normalize_report(
-            response["data"],
+            response.get("data"),
             "URL",
         )
 
@@ -186,8 +310,16 @@ class VirusTotalProvider(ThreatProvider):
             },
         )
 
+        if not isinstance(
+            response,
+            dict,
+        ):
+            raise ValueError(
+                "Invalid VirusTotal response."
+            )
+
         return self._normalize_report(
-            response["data"],
+            response.get("data"),
             "HASH",
         )
 
@@ -198,21 +330,36 @@ class VirusTotalProvider(ThreatProvider):
     ) -> ThreatIndicator:
         """
         Generic IOC lookup interface.
+
+        The argument order intentionally matches
+        the enrichment service:
+
+            indicator_type, value
         """
 
-        normalized_type = indicator_type.strip().upper()
+        normalized_type = (
+            indicator_type.strip().upper()
+        )
 
         if normalized_type == "IP":
-            return await self.get_ip_report(value)
+            return await self.get_ip_report(
+                value
+            )
 
         if normalized_type == "DOMAIN":
-            return await self.get_domain_report(value)
+            return await self.get_domain_report(
+                value
+            )
 
         if normalized_type == "URL":
-            return await self.get_url_report(value)
+            return await self.get_url_report(
+                value
+            )
 
         if normalized_type == "HASH":
-            return await self.get_hash_report(value)
+            return await self.get_hash_report(
+                value
+            )
 
         raise ValueError(
             f"Unsupported indicator type: "
@@ -223,10 +370,9 @@ class VirusTotalProvider(ThreatProvider):
         self,
     ) -> list[ThreatIndicator]:
         """
-        Bulk feed collection placeholder.
-
-        VirusTotal currently performs IOC
-        enrichment through explicit lookups.
+        VirusTotal currently performs IOC enrichment
+        through explicit lookups rather than bulk feed
+        collection.
         """
 
         return []

@@ -602,7 +602,8 @@ async def test_malformed_attributes_raise_provider_error(
     )
 
     with pytest.raises(
-        AttributeError,
+        ValueError,
+        match="Invalid VirusTotal response",
     ):
         await provider.get_ip_report(
             "8.8.8.8"
@@ -628,7 +629,8 @@ async def test_malformed_analysis_stats_raise_provider_error(
     )
 
     with pytest.raises(
-        AttributeError,
+        ValueError,
+        match="Invalid VirusTotal response",
     ):
         await provider.get_ip_report(
             "8.8.8.8"
@@ -654,7 +656,43 @@ async def test_missing_indicator_id_raises_provider_error(
     )
 
     with pytest.raises(
-        KeyError,
+        ValueError,
+        match="Invalid VirusTotal response",
+    ):
+        await provider.get_ip_report(
+            "8.8.8.8"
+        )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_data",
+    [
+        {},
+        {"data": {}},
+        {"data": {"attributes": {}}},
+        {"data": {"id": "8.8.8.8", "attributes": []}},
+        {
+            "data": {
+                "id": "8.8.8.8",
+                "attributes": {
+                    "last_analysis_stats": []
+                },
+            }
+        },
+    ],
+)
+async def test_malformed_response_is_rejected(
+    monkeypatch,
+    response_data,
+):
+    provider = make_provider(
+        monkeypatch,
+        response_data,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid VirusTotal response",
     ):
         await provider.get_ip_report(
             "8.8.8.8"
