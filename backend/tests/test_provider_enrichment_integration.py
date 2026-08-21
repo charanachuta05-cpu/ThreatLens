@@ -121,6 +121,39 @@ async def test_failed_provider_falls_back_to_next_provider():
     assert enriched.severity == "HIGH"
     assert enriched.malicious == 4
 
+@pytest.mark.asyncio
+async def test_provider_failure_does_not_log_raw_exception(
+    caplog,
+):
+    indicator = ThreatIndicator(
+        value="8.8.8.8",
+        type="IP",
+        source="Simulated",
+        severity="LOW",
+    )
+
+    class SensitiveFailingProvider:
+        provider_name = "SensitiveFailingProvider"
+
+        async def get_indicator_report(
+            self,
+            indicator_type: str,
+            value: str,
+        ):
+            raise RuntimeError(
+                "SECRET_PROVIDER_DETAILS"
+            )
+
+    with caplog.at_level("ERROR"):
+        enriched = await enrich_with_providers(
+            indicator,
+            [SensitiveFailingProvider()],
+        )
+
+    assert enriched == indicator
+    assert "SensitiveFailingProvider enrichment failed" in caplog.text
+    assert "SECRET_PROVIDER_DETAILS" not in caplog.text
+
 
 @pytest.mark.asyncio
 async def test_empty_provider_falls_back_to_next_provider():

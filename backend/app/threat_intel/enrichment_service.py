@@ -221,12 +221,11 @@ async def enrich_with_providers(
                 provider_name=provider_name,
             )
 
-        except Exception as exc:
-            logger.exception(
-                "%s enrichment failed for %s: %s",
+        except Exception:
+            logger.error(
+                "%s enrichment failed for %s.",
                 provider_name,
                 value,
-                exc,
             )
 
     if enriched_indicator is indicator:
