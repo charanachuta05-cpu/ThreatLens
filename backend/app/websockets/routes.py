@@ -8,8 +8,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.websockets.manager import manager
+from app.logging.logger import logger
 from app.websockets.auth import verify_websocket_token
+from app.websockets.manager import manager
+
 
 router = APIRouter()
 
@@ -17,7 +19,7 @@ router = APIRouter()
 @router.websocket("/ws/alerts")
 async def websocket_endpoint(websocket: WebSocket):
 
-    print("=== WebSocket connection attempt ===")
+    logger.info("WebSocket connection attempt")
 
     db: Session = SessionLocal()
 
@@ -25,18 +27,33 @@ async def websocket_endpoint(websocket: WebSocket):
         token = websocket.query_params.get("token")
 
         if not token:
-            print("❌ No token provided")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            logger.warning(
+                "WebSocket connection rejected: no token provided"
+            )
+
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION
+            )
             return
 
         user = verify_websocket_token(token, db)
 
         if user is None:
-            print("❌ Invalid token")
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            logger.warning(
+                "WebSocket connection rejected: invalid token"
+            )
+
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION
+            )
             return
 
-        print("✅ Token valid")
+        logger.info(
+            "WebSocket authentication successful: "
+            "user=%s role=%s",
+            user.username,
+            user.role,
+        )
 
         await manager.connect(websocket, user)
 
@@ -45,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.receive_text()
 
         except WebSocketDisconnect:
-            print("Client disconnected")
+            logger.info("WebSocket client disconnected")
             manager.disconnect(websocket)
 
     finally:

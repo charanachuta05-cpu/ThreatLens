@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     # notifications are required.
     events.websocket_loop = asyncio.get_running_loop()
 
-    print("✅ Main event loop stored")
+    logger.info("Main event loop stored")
 
     # Do not run background workers during tests.
     #
@@ -63,11 +63,11 @@ async def lifespan(app: FastAPI):
     # feed from modifying the database while pytest
     # is executing.
     if settings.APP_ENV.lower() == "test":
-        print("🧪 Test environment detected")
-        print("⏸️ Background scheduler disabled")
+        logger.info("Test environment detected")
+        logger.info("Background scheduler disabled")
     else:
         start_scheduler()
-        print("✅ Background scheduler started")
+        logger.info("Background scheduler started")
 
     try:
         yield
@@ -77,14 +77,14 @@ async def lifespan(app: FastAPI):
         # application shutdown.
         if settings.APP_ENV.lower() != "test":
             stop_scheduler()
-            print("🛑 Background scheduler stopped")
+            logger.info("Background scheduler stopped")
         else:
-            print("🧪 Test environment: scheduler shutdown skipped")
+            logger.info("Test environment: scheduler shutdown skipped")
 
         # Clear the stored event loop reference.
         events.websocket_loop = None
 
-        print("🛑 Main event loop cleared")
+        logger.info("Main event loop cleared")
 
 
 app = FastAPI(
@@ -145,7 +145,7 @@ app.include_router(alerts.router)
 app.include_router(threats.router)
 
 app.include_router(websocket_router)
-print("✅ WebSocket router registered")
+logger.info("WebSocket router registered")
 
 app.include_router(websocket_status_router)
 
@@ -183,7 +183,7 @@ def health():
             "database": "connected",
         }
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Health check database connection failed")
 
         return {
