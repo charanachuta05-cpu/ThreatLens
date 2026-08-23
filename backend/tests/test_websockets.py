@@ -325,3 +325,83 @@ async def test_broadcast_to_roles_removes_failed_connection():
     )
 
     assert manager.active_connections == []
+
+
+def test_websocket_rejects_missing_token(client):
+    with pytest.raises(Exception):
+        with client.websocket_connect("/ws/alerts"):
+            pass
+
+
+def test_websocket_rejects_invalid_token(client):
+    with pytest.raises(Exception):
+        with client.websocket_connect(
+            "/ws/alerts?token=invalid-token"
+        ):
+            pass
+
+
+def test_websocket_accepts_valid_admin_token(client, admin_token):
+    with client.websocket_connect(
+        f"/ws/alerts?token={admin_token}"
+    ) as websocket:
+        response = client.get(
+            "/ws/users",
+            headers={
+                "Authorization": f"Bearer {admin_token}"
+            },
+        )
+
+        assert response.status_code == 200
+
+        users = response.json()
+
+        assert any(
+            user["username"] == "admin"
+            and user["role"] == "admin"
+            for user in users
+        )
+
+        websocket.close()
+
+
+def test_websocket_connection_is_removed_after_disconnect(
+    client,
+    admin_token,
+):
+    with client.websocket_connect(
+        f"/ws/alerts?token={admin_token}"
+    ) as websocket:
+        response = client.get(
+            "/ws/users",
+            headers={
+                "Authorization": f"Bearer {admin_token}"
+            },
+        )
+
+        assert response.status_code == 200
+
+        connected_users = response.json()
+
+        assert any(
+            user["username"] == "admin"
+            for user in connected_users
+        )
+
+        websocket.close()
+
+    response = client.get(
+        "/ws/users",
+        headers={
+            "Authorization": f"Bearer {admin_token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    connected_users = response.json()
+
+    assert not any(
+        user["username"] == "admin"
+        for user in connected_users
+    )
