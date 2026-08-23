@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.core.database import SessionLocal
 from app.core.security import create_access_token
@@ -27,7 +27,7 @@ def create_test_audit_events():
     db = SessionLocal()
 
     try:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         events = [
             AuditEvent(
