@@ -1,111 +1,280 @@
 import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
-
-import {
   Activity,
   AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Bell,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  Eye,
+  Globe2,
   RefreshCw,
+  Search,
+  Shield,
   ShieldAlert,
   Target,
+  TrendingUp,
+  Zap,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import axios from "axios";
 
-import {
-  getDashboardSummary,
-  type DashboardSummary,
-} from "../api/dashboard";
-
-import {
-  getAlerts,
-  type Alert,
-} from "../api/alerts";
-
-import {
-  getIndicators,
-  type Indicator,
-} from "../api/indicators";
-
-import { useAlertWebSocket } from "../hooks/useAlertWebSocket";
-
+import apiClient from "../api/client";
 import "./Dashboard.css";
+
+interface DashboardSummary {
+  active_alerts: number;
+  critical_alerts: number;
+  threat_indicators: number;
+  high_risk_indicators: number;
+  average_threat_score: number;
+  visible_alerts: number;
+
+  recent_alerts?: DashboardAlert[];
+  recent_indicators?: DashboardIndicator[];
+
+  [key: string]: unknown;
+}
+
+interface DashboardAlert {
+  id: number;
+  title: string;
+  description?: string | null;
+  severity: string;
+  status: string;
+  source?: string | null;
+  created_at: string;
+  indicator_id?: number | null;
+}
+
+interface DashboardIndicator {
+  id: number;
+  indicator_type: string;
+  value: string;
+  severity: string;
+  threat_score: number;
+  reputation_score?: number;
+  confidence_score?: number;
+  source?: string | null;
+  created_at: string;
+}
+
+interface Metric {
+  label: string;
+  value: number;
+  icon: typeof Shield;
+  tone: string;
+  change?: string;
+  changeTone?: "up" | "down" | "neutral";
+}
+
+const EMPTY_SUMMARY: DashboardSummary = {
+  active_alerts: 0,
+  critical_alerts: 0,
+  threat_indicators: 0,
+  high_risk_indicators: 0,
+  average_threat_score: 0,
+  visible_alerts: 0,
+};
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleString([], {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatTime(value: string | null | undefined): string {
+  if (!value) {
+    return "--:--";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function severityClass(
+  severity: string | null | undefined,
+): string {
+  switch (severity?.toUpperCase()) {
+    case "CRITICAL":
+      return "severity-critical";
+
+    case "HIGH":
+      return "severity-high";
+
+    case "MEDIUM":
+      return "severity-medium";
+
+    case "LOW":
+      return "severity-low";
+
+    default:
+      return "severity-unknown";
+  }
+}
+
+function severityTone(
+  severity: string | null | undefined,
+): "critical" | "high" | "medium" | "low" {
+  switch (severity?.toUpperCase()) {
+    case "CRITICAL":
+      return "critical";
+
+    case "HIGH":
+      return "high";
+
+    case "MEDIUM":
+      return "medium";
+
+    default:
+      return "low";
+  }
+}
+
+function getApiErrorMessage(error: unknown): string {
+  if (!axios.isAxiosError(error)) {
+    return "Unable to load dashboard data.";
+  }
+
+  switch (error.response?.status) {
+    case 401:
+      return "Your session has expired. Please log in again.";
+
+    case 403:
+      return "You do not have permission to view the dashboard.";
+
+    default:
+      return "Unable to load dashboard data.";
+  }
+}
 
 function Dashboard() {
   const [summary, setSummary] =
-    useState<DashboardSummary | null>(null);
+    useState<DashboardSummary>(EMPTY_SUMMARY);
 
   const [alerts, setAlerts] =
-    useState<Alert[]>([]);
+    useState<DashboardAlert[]>([]);
 
   const [indicators, setIndicators] =
-    useState<Indicator[]>([]);
+    useState<DashboardIndicator[]>([]);
 
   const [loading, setLoading] =
     useState(true);
 
+  const [refreshing, setRefreshing] =
+    useState(false);
+
   const [error, setError] =
     useState("");
 
-  /*
-   * =========================================
-   * LOAD DASHBOARD DATA
-   * =========================================
-   */
+  const [lastUpdated, setLastUpdated] =
+    useState(new Date());
 
   const loadDashboard = useCallback(
-    async () => {
+    async (background = false) => {
       try {
-        setLoading(true);
+        if (background) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
         setError("");
 
         const [
-          summaryData,
-          alertData,
-          indicatorData,
+          summaryResponse,
+          alertsResponse,
+          indicatorsResponse,
         ] = await Promise.all([
-          getDashboardSummary(),
+          apiClient.get<DashboardSummary>(
+            "/dashboard/summary",
+          ),
 
-          getAlerts({
-            skip: 0,
-            limit: 5,
-          }),
+          apiClient.get<DashboardAlert[]>(
+            "/alerts/",
+            {
+              params: {
+                skip: 0,
+                limit: 50,
+              },
+            },
+          ),
 
-          getIndicators({
-            skip: 0,
-            limit: 5,
-          }),
+          apiClient.get<DashboardIndicator[]>(
+            "/indicators/",
+            {
+              params: {
+                skip: 0,
+                limit: 100,
+                sort_by: "created_at",
+                order: "desc",
+              },
+            },
+          ),
         ]);
 
-        setSummary(summaryData);
-        setAlerts(alertData);
-        setIndicators(indicatorData);
-      } catch (err) {
+        setSummary({
+          ...EMPTY_SUMMARY,
+          ...summaryResponse.data,
+        });
+
+        setAlerts(
+          Array.isArray(alertsResponse.data)
+            ? alertsResponse.data
+            : [],
+        );
+
+        setIndicators(
+          Array.isArray(indicatorsResponse.data)
+            ? indicatorsResponse.data
+            : [],
+        );
+
+        setLastUpdated(new Date());
+      } catch (requestError) {
         console.error(
           "Failed to load dashboard:",
-          err,
+          requestError,
         );
 
         setError(
-          "Unable to load dashboard data.",
+          getApiErrorMessage(requestError),
         );
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     },
     [],
   );
-
-  /*
-   * =========================================
-   * INITIAL LOAD
-   * =========================================
-   *
-   * setTimeout moves the state-changing
-   * asynchronous operation outside the
-   * synchronous effect body so that the
-   * React hooks lint rule is satisfied.
-   */
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -117,567 +286,1063 @@ function Dashboard() {
     };
   }, [loadDashboard]);
 
-  /*
-   * =========================================
-   * REAL-TIME ALERT CREATED
-   * =========================================
-   */
-
-  const handleAlertCreated = useCallback(
-    (newAlert: Alert) => {
-      console.info(
-        "[ThreatLens] Dashboard received alert.created:",
-        newAlert,
-      );
-
-      setAlerts((currentAlerts) => {
-        const alreadyExists =
-          currentAlerts.some(
-            (alert) =>
-              alert.id === newAlert.id,
-          );
-
-        if (alreadyExists) {
-          return currentAlerts;
-        }
-
-        return [
-          newAlert,
-          ...currentAlerts,
-        ].slice(0, 5);
-      });
-
-      /*
-       * Keep the dashboard summary's active
-       * alert count synchronized when the
-       * backend reports a new OPEN alert.
-       */
-      if (newAlert.status === "OPEN") {
-        setSummary((currentSummary) => {
-          if (!currentSummary) {
-            return currentSummary;
-          }
-
-          return {
-            ...currentSummary,
-            active_alerts:
-              currentSummary.active_alerts + 1,
-          };
-        });
-      }
-    },
-    [],
-  );
-
-  /*
-   * =========================================
-   * REAL-TIME ALERT UPDATED
-   * =========================================
-   */
-
-  const handleAlertUpdated = useCallback(
-    (updatedAlert: Alert) => {
-      console.info(
-        "[ThreatLens] Dashboard received alert.updated:",
-        updatedAlert,
-      );
-
-      setAlerts((currentAlerts) =>
-        currentAlerts.map((alert) =>
-          alert.id === updatedAlert.id
-            ? {
-                ...alert,
-                ...updatedAlert,
-              }
-            : alert,
-        ),
-      );
-    },
-    [],
-  );
-
-  /*
-   * =========================================
-   * REAL-TIME ALERT DELETED
-   * =========================================
-   */
-
-  const handleAlertDeleted = useCallback(
-    (alertId: number) => {
-      console.info(
-        "[ThreatLens] Dashboard received alert.deleted:",
-        alertId,
-      );
-
-      setAlerts((currentAlerts) =>
-        currentAlerts.filter(
-          (alert) =>
-            alert.id !== alertId,
-        ),
-      );
-    },
-    [],
-  );
-
-  /*
-   * =========================================
-   * WEBSOCKET
-   * =========================================
-   */
-
-  useAlertWebSocket({
-    onAlertCreated:
-      handleAlertCreated,
-
-    onAlertUpdated:
-      handleAlertUpdated,
-
-    onAlertDeleted:
-      handleAlertDeleted,
-  });
-
-  /*
-   * =========================================
-   * DERIVED METRICS
-   * =========================================
-   *
-   * These are calculated from the actual
-   * arrays returned by the API instead of
-   * relying on fields that may not exist in
-   * DashboardSummary.
-   */
-
-  const visibleCriticalAlerts =
-    alerts.filter(
-      (alert) =>
-        alert.severity === "CRITICAL",
-    ).length;
-
-  const visibleOpenAlerts =
-    alerts.filter(
-      (alert) =>
-        alert.status === "OPEN",
-    ).length;
-
-  const highRiskIndicators =
-    indicators.filter(
-      (indicator) =>
-        indicator.severity === "HIGH" ||
-        indicator.severity === "CRITICAL",
-    ).length;
-
-  const averageThreatScore =
-    indicators.length > 0
-      ? Math.round(
-          indicators.reduce(
-            (total, indicator) =>
-              total +
-              indicator.threat_score,
-            0,
-          ) / indicators.length,
+  const recentAlerts = useMemo(
+    () =>
+      alerts
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime(),
         )
-      : 0;
+        .slice(0, 5),
+    [alerts],
+  );
 
-  /*
-   * =========================================
-   * DATE FORMATTER
-   * =========================================
-   */
+  const recentIndicators = useMemo(
+    () =>
+      indicators
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime(),
+        )
+        .slice(0, 6),
+    [indicators],
+  );
 
-  function formatDate(
-    value: string,
-  ): string {
-    if (!value) {
-      return "Unknown";
-    }
+  const severityCounts = useMemo(() => {
+    const counts = {
+      CRITICAL: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      LOW: 0,
+    };
 
-    const date = new Date(value);
+    alerts.forEach((alert) => {
+      const severity =
+        alert.severity?.toUpperCase();
 
-    if (
-      Number.isNaN(
-        date.getTime(),
-      )
-    ) {
-      return "Unknown";
-    }
+      if (severity in counts) {
+        counts[
+          severity as keyof typeof counts
+        ] += 1;
+      }
+    });
 
-    return date.toLocaleString();
-  }
+    return counts;
+  }, [alerts]);
 
-  /*
-   * =========================================
-   * LOADING STATE
-   * =========================================
-   */
-
-  if (loading) {
-    return (
-      <div className="dashboard-page">
-        <div className="dashboard-state">
-          Loading dashboard...
-        </div>
-      </div>
+  const totalSeverityAlerts =
+    Object.values(severityCounts).reduce(
+      (total, value) => total + value,
+      0,
     );
-  }
 
-  /*
-   * =========================================
-   * ERROR STATE
-   * =========================================
-   */
+  const severityPercent = (
+    value: number,
+  ): number =>
+    totalSeverityAlerts === 0
+      ? 0
+      : Math.round(
+          (value / totalSeverityAlerts) * 100,
+        );
 
-  if (error) {
-    return (
-      <div className="dashboard-page">
-        <div className="dashboard-state error">
-          <p>{error}</p>
+  const indicatorTypes = useMemo(() => {
+    const counts = new Map<string, number>();
 
-          <button
-            type="button"
-            className="refresh-button"
-            onClick={() =>
-              void loadDashboard()
-            }
-          >
-            <RefreshCw size={16} />
+    indicators.forEach((indicator) => {
+      const type =
+        indicator.indicator_type || "UNKNOWN";
 
-            Try Again
-          </button>
-        </div>
-      </div>
+      counts.set(
+        type,
+        (counts.get(type) ?? 0) + 1,
+      );
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [indicators]);
+
+  const maxIndicatorType =
+    indicatorTypes[0]?.[1] ?? 1;
+
+  const alertTrend = useMemo(() => {
+    const days = Array.from(
+      { length: 7 },
+      (_, index) => {
+        const date = new Date();
+
+        date.setHours(0, 0, 0, 0);
+        date.setDate(
+          date.getDate() - (6 - index),
+        );
+
+        return date;
+      },
     );
-  }
 
-  /*
-   * =========================================
-   * DASHBOARD
-   * =========================================
-   */
+    return days.map((day) => {
+      const nextDay = new Date(day);
+
+      nextDay.setDate(day.getDate() + 1);
+
+      const dayAlerts = alerts.filter(
+        (alert) => {
+          const created =
+            new Date(alert.created_at);
+
+          return (
+            created >= day &&
+            created < nextDay
+          );
+        },
+      );
+
+      return {
+        label: day.toLocaleDateString(
+          [],
+          {
+            day: "2-digit",
+            month: "short",
+          },
+        ),
+        total: dayAlerts.length,
+        high: dayAlerts.filter(
+          (alert) =>
+            ["HIGH", "CRITICAL"].includes(
+              alert.severity?.toUpperCase(),
+            ),
+        ).length,
+        critical: dayAlerts.filter(
+          (alert) =>
+            alert.severity?.toUpperCase() ===
+            "CRITICAL",
+        ).length,
+      };
+    });
+  }, [alerts]);
+
+  const maxTrend =
+    Math.max(
+      ...alertTrend.map(
+        (point) => point.total,
+      ),
+      1,
+    );
+
+  const metrics: Metric[] = [
+    {
+      label: "Active Alerts",
+      value: summary.active_alerts,
+      icon: ShieldAlert,
+      tone: "red",
+      change: "Live security queue",
+      changeTone: "up",
+    },
+    {
+      label: "Critical Alerts",
+      value: summary.critical_alerts,
+      icon: AlertTriangle,
+      tone: "orange",
+      change:
+        summary.critical_alerts > 0
+          ? "Immediate attention"
+          : "No critical alerts",
+      changeTone:
+        summary.critical_alerts > 0
+          ? "up"
+          : "neutral",
+    },
+    {
+      label: "Threat Indicators",
+      value: summary.threat_indicators,
+      icon: Activity,
+      tone: "purple",
+      change: "Intelligence inventory",
+      changeTone: "up",
+    },
+    {
+      label: "High Risk Indicators",
+      value:
+        summary.high_risk_indicators,
+      icon: Target,
+      tone: "yellow",
+      change:
+        summary.high_risk_indicators > 0
+          ? "Requires analyst review"
+          : "No high-risk IOCs",
+      changeTone:
+        summary.high_risk_indicators > 0
+          ? "up"
+          : "neutral",
+    },
+    {
+      label: "Average Threat Score",
+      value:
+        summary.average_threat_score,
+      icon: TrendingUp,
+      tone: "green",
+      change:
+        summary.average_threat_score >= 70
+          ? "Elevated risk posture"
+          : "Within monitored range",
+      changeTone:
+        summary.average_threat_score >= 70
+          ? "up"
+          : "neutral",
+    },
+    {
+      label: "Visible Alerts",
+      value: summary.visible_alerts,
+      icon: Eye,
+      tone: "blue",
+      change: "Current analyst view",
+      changeTone: "neutral",
+    },
+  ];
+
+  const dateLabel =
+    lastUpdated.toLocaleDateString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+  const timeLabel =
+    lastUpdated.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
   return (
-    <div className="dashboard-page">
+    <main className="dashboard-page">
+      <div className="dashboard-shell">
+        {/* =========================================
+            HEADER
+        ========================================= */}
 
-      {/* =====================================
-          PAGE HEADER
-      ===================================== */}
-
-      <div className="page-heading">
-        <div>
-          <h2>Security Dashboard</h2>
-
-          <p>
-            Monitor threat activity,
-            security alerts, and
-            intelligence indicators.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="refresh-button"
-          onClick={() =>
-            void loadDashboard()
-          }
-          disabled={loading}
-        >
-          <RefreshCw size={16} />
-
-          Refresh
-        </button>
-      </div>
-
-      {/* =====================================
-          SUMMARY CARDS
-      ===================================== */}
-
-      <div className="dashboard-summary">
-
-        {/* Active Alerts */}
-
-        <div className="dashboard-summary-card">
-
-          <div className="summary-icon">
-            <ShieldAlert size={20} />
-          </div>
-
+        <header className="dashboard-header">
           <div>
-            <span>
-              Active Alerts
-            </span>
+            <div className="dashboard-eyebrow">
+              <span className="live-dot" />
+              SECURITY OPERATIONS CENTER
+            </div>
 
-            <strong>
-              {summary?.active_alerts ??
-                visibleOpenAlerts}
-            </strong>
+            <h1>Security Dashboard</h1>
+
+            <p>
+              Overview of your security posture
+              and threat landscape.
+            </p>
           </div>
 
-        </div>
+          <div className="dashboard-header-actions">
+            <div className="dashboard-date">
+              <CalendarDays size={16} />
 
-        {/* Critical Alerts */}
+              <div>
+                <strong>{dateLabel}</strong>
+                <span>{timeLabel}</span>
+              </div>
+            </div>
 
-        <div className="dashboard-summary-card critical">
+            <button
+              type="button"
+              className="dashboard-refresh"
+              onClick={() =>
+                void loadDashboard(true)
+              }
+              disabled={refreshing}
+            >
+              <RefreshCw
+                size={16}
+                className={
+                  refreshing
+                    ? "spin"
+                    : undefined
+                }
+              />
+              Refresh
+            </button>
 
-          <div className="summary-icon">
-            <AlertTriangle size={20} />
+            <button
+              type="button"
+              className="dashboard-icon-button"
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
+              <span className="notification-badge">
+                {summary.critical_alerts}
+              </span>
+            </button>
           </div>
+        </header>
 
-          <div>
-            <span>
-              Critical Alerts
-            </span>
+        {/* =========================================
+            ERROR
+        ========================================= */}
 
-            <strong>
-              {visibleCriticalAlerts}
-            </strong>
+        {error && (
+          <div className="dashboard-error">
+            <CircleAlert size={18} />
+            <span>{error}</span>
+
+            <button
+              type="button"
+              onClick={() =>
+                void loadDashboard()
+              }
+            >
+              Retry
+            </button>
           </div>
+        )}
 
-        </div>
+        {/* =========================================
+            TOP METRICS
+        ========================================= */}
 
-        {/* Indicators */}
+        <section className="metric-grid">
+          {metrics.map((metric) => {
+            const Icon = metric.icon;
 
-        <div className="dashboard-summary-card">
+            return (
+              <article
+                className={`metric-card metric-${metric.tone}`}
+                key={metric.label}
+              >
+                <div className="metric-icon">
+                  <Icon size={21} />
+                </div>
 
-          <div className="summary-icon">
-            <Target size={20} />
-          </div>
+                <div className="metric-content">
+                  <span className="metric-label">
+                    {metric.label}
+                  </span>
 
-          <div>
-            <span>
-              Threat Indicators
-            </span>
+                  <strong className="metric-value">
+                    {loading
+                      ? "—"
+                      : formatNumber(
+                          metric.value,
+                        )}
+                  </strong>
 
-            <strong>
-              {indicators.length}
-            </strong>
-          </div>
+                  <span
+                    className={`metric-change ${metric.changeTone ?? "neutral"}`}
+                  >
+                    {metric.changeTone ===
+                      "up" && (
+                      <ArrowUpRight
+                        size={14}
+                      />
+                    )}
 
-        </div>
+                    {metric.changeTone ===
+                      "down" && (
+                      <ArrowDownRight
+                        size={14}
+                      />
+                    )}
 
-        {/* High Risk */}
+                    {metric.change}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </section>
 
-        <div className="dashboard-summary-card critical">
+        {/* =========================================
+            ANALYTICS ROW
+        ========================================= */}
 
-          <div className="summary-icon">
-            <Activity size={20} />
-          </div>
+        <section className="dashboard-grid dashboard-grid-top">
+          {/* ALERT TREND */}
 
-          <div>
-            <span>
-              High Risk Indicators
-            </span>
+          <article className="dashboard-card alert-trend-card">
+            <div className="card-header">
+              <div>
+                <h2>Alerts Over Time</h2>
+                <p>
+                  Last 7 days of observed security
+                  events
+                </p>
+              </div>
 
-            <strong>
-              {highRiskIndicators}
-            </strong>
-          </div>
+              <button
+                type="button"
+                className="period-selector"
+              >
+                7 Days
+                <ChevronDown size={15} />
+              </button>
+            </div>
 
-        </div>
-
-      </div>
-
-      {/* =====================================
-          SECONDARY METRICS
-      ===================================== */}
-
-      <div className="dashboard-secondary">
-
-        <div className="dashboard-metric-card">
-
-          <span>
-            Average Threat Score
-          </span>
-
-          <strong>
-            {averageThreatScore}
-          </strong>
-
-        </div>
-
-        <div className="dashboard-metric-card">
-
-          <span>
-            Visible Alerts
-          </span>
-
-          <strong>
-            {alerts.length}
-          </strong>
-
-        </div>
-
-        <div className="dashboard-metric-card">
-
-          <span>
-            Visible Indicators
-          </span>
-
-          <strong>
-            {indicators.length}
-          </strong>
-
-        </div>
-
-      </div>
-
-      {/* =====================================
-          CONTENT GRID
-      ===================================== */}
-
-      <div className="dashboard-grid">
-
-        {/* ===================================
-            RECENT ALERTS
-        =================================== */}
-
-        <div className="dashboard-card">
-
-          <div className="dashboard-card-header">
-
-            <div>
-              <h3>
-                Recent Security Alerts
-              </h3>
+            <div className="chart-legend">
+              <span>
+                <i className="legend-blue" />
+                Total Alerts
+              </span>
 
               <span>
-                Latest detected events
+                <i className="legend-red" />
+                High Severity
+              </span>
+
+              <span>
+                <i className="legend-orange" />
+                Critical
               </span>
             </div>
 
-            <span className="live-status">
-              Live
-            </span>
+            <div className="trend-chart">
+              <div className="chart-y-axis">
+                <span>{maxTrend}</span>
+                <span>
+                  {Math.round(
+                    maxTrend * 0.75,
+                  )}
+                </span>
+                <span>
+                  {Math.round(
+                    maxTrend * 0.5,
+                  )}
+                </span>
+                <span>
+                  {Math.round(
+                    maxTrend * 0.25,
+                  )}
+                </span>
+                <span>0</span>
+              </div>
 
-          </div>
+              <div className="chart-area">
+                <div className="chart-grid-lines">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
 
-          {alerts.length === 0 ? (
-            <div className="dashboard-empty">
-              No recent alerts.
-            </div>
-          ) : (
-            <div className="dashboard-alert-list">
-
-              {alerts.map(
-                (alert) => (
-                  <div
-                    className="dashboard-alert-item"
-                    key={alert.id}
-                  >
-
-                    <div className="dashboard-alert-main">
-
-                      <strong>
-                        {alert.title}
-                      </strong>
-
-                      <span>
-                        {alert.source ||
-                          "Unknown source"}
-                      </span>
-
-                    </div>
-
-                    <div className="dashboard-alert-meta">
-
-                      <span
-                        className={`severity-badge ${alert.severity.toLowerCase()}`}
+                <div className="trend-bars">
+                  {alertTrend.map(
+                    (point) => (
+                      <div
+                        className="trend-column"
+                        key={point.label}
                       >
-                        {alert.severity}
-                      </span>
+                        <div className="trend-bar-wrap">
+                          <div
+                            className="trend-bar total"
+                            style={{
+                              height: `${
+                                (point.total /
+                                  maxTrend) *
+                                100
+                              }%`,
+                            }}
+                            title={`${point.total} alerts`}
+                          />
 
-                      <span className="status-badge">
-                        {alert.status}
-                      </span>
+                          <div
+                            className="trend-bar high"
+                            style={{
+                              height: `${
+                                (point.high /
+                                  maxTrend) *
+                                100
+                              }%`,
+                            }}
+                          />
 
-                      <span className="date-text">
-                        {formatDate(
+                          <div
+                            className="trend-bar critical"
+                            style={{
+                              height: `${
+                                (point.critical /
+                                  maxTrend) *
+                                100
+                              }%`,
+                            }}
+                          />
+                        </div>
+
+                        <span>
+                          {point.label}
+                        </span>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          {/* SEVERITY */}
+
+          <article className="dashboard-card severity-card">
+            <div className="card-header">
+              <div>
+                <h2>Alerts by Severity</h2>
+                <p>
+                  Distribution of loaded alerts
+                </p>
+              </div>
+
+              <div className="severity-status">
+                <span className="live-dot" />
+                Live
+              </div>
+            </div>
+
+            <div className="severity-layout">
+              <div
+                className="severity-donut"
+                style={{
+                  background: `conic-gradient(
+                    #ef4444 0 ${
+                      severityPercent(
+                        severityCounts.CRITICAL,
+                      ) +
+                      severityPercent(
+                        severityCounts.HIGH,
+                      )
+                    }%,
+                    #f97316 ${
+                      severityPercent(
+                        severityCounts.CRITICAL,
+                      ) +
+                      severityPercent(
+                        severityCounts.HIGH,
+                      )
+                    }% ${
+                      severityPercent(
+                        severityCounts.CRITICAL,
+                      ) +
+                      severityPercent(
+                        severityCounts.HIGH,
+                      ) +
+                      severityPercent(
+                        severityCounts.MEDIUM,
+                      )
+                    }%,
+                    #eab308 ${
+                      severityPercent(
+                        severityCounts.CRITICAL,
+                      ) +
+                      severityPercent(
+                        severityCounts.HIGH,
+                      ) +
+                      severityPercent(
+                        severityCounts.MEDIUM,
+                      )
+                    }% 100%
+                  )`,
+                }}
+              >
+                <div>
+                  <strong>
+                    {formatNumber(
+                      totalSeverityAlerts,
+                    )}
+                  </strong>
+
+                  <span>Total</span>
+                </div>
+              </div>
+
+              <div className="severity-list">
+                {[
+                  {
+                    label: "Critical",
+                    value:
+                      severityCounts.CRITICAL,
+                    className:
+                      "severity-critical-dot",
+                  },
+                  {
+                    label: "High",
+                    value:
+                      severityCounts.HIGH,
+                    className:
+                      "severity-high-dot",
+                  },
+                  {
+                    label: "Medium",
+                    value:
+                      severityCounts.MEDIUM,
+                    className:
+                      "severity-medium-dot",
+                  },
+                  {
+                    label: "Low",
+                    value:
+                      severityCounts.LOW,
+                    className:
+                      "severity-low-dot",
+                  },
+                ].map((item) => (
+                  <div
+                    className="severity-list-row"
+                    key={item.label}
+                  >
+                    <span>
+                      <i
+                        className={
+                          item.className
+                        }
+                      />
+                      {item.label}
+                    </span>
+
+                    <strong>
+                      {formatNumber(
+                        item.value,
+                      )}
+                    </strong>
+
+                    <small>
+                      {severityPercent(
+                        item.value,
+                      )}
+                      %
+                    </small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </article>
+
+          {/* TOP TYPES */}
+
+          <article className="dashboard-card indicator-types-card">
+            <div className="card-header">
+              <div>
+                <h2>Top Indicator Types</h2>
+                <p>By intelligence volume</p>
+              </div>
+            </div>
+
+            <div className="indicator-type-list">
+              {indicatorTypes.length === 0 ? (
+                <div className="empty-state">
+                  No indicators available.
+                </div>
+              ) : (
+                indicatorTypes.map(
+                  ([type, count], index) => (
+                    <div
+                      className="indicator-type-row"
+                      key={type}
+                    >
+                      <div className="type-icon">
+                        {type
+                          .toUpperCase()
+                          .includes("IP") ? (
+                          <Globe2
+                            size={16}
+                          />
+                        ) : type
+                            .toUpperCase()
+                            .includes(
+                              "URL",
+                            ) ? (
+                          <Search
+                            size={16}
+                          />
+                        ) : (
+                          <Zap size={16} />
+                        )}
+                      </div>
+
+                      <div className="type-main">
+                        <div>
+                          <span>
+                            {type}
+                          </span>
+
+                          <strong>
+                            {formatNumber(
+                              count,
+                            )}
+                          </strong>
+                        </div>
+
+                        <div className="type-progress">
+                          <span
+                            style={{
+                              width: `${
+                                (count /
+                                  maxIndicatorType) *
+                                100
+                              }%`,
+                            }}
+                            className={`type-progress-${index}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                )
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="card-link"
+              onClick={() => {
+                window.location.href =
+                  "/indicators";
+              }}
+            >
+              View all indicators
+              <ArrowRight size={15} />
+            </button>
+          </article>
+        </section>
+
+        {/* =========================================
+            LOWER ROW
+        ========================================= */}
+
+        <section className="dashboard-grid dashboard-grid-bottom">
+          {/* RECENT ALERTS */}
+
+          <article className="dashboard-card recent-alerts-card">
+            <div className="card-header">
+              <div>
+                <h2>Recent Security Alerts</h2>
+                <p>
+                  Latest detected events requiring
+                  analyst attention
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="card-outline-button"
+                onClick={() => {
+                  window.location.href =
+                    "/alerts";
+                }}
+              >
+                View All
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div className="alert-list">
+              {recentAlerts.length === 0 ? (
+                <div className="empty-state">
+                  <CheckCircle2
+                    size={24}
+                  />
+                  No recent alerts.
+                </div>
+              ) : (
+                recentAlerts.map((alert) => {
+                  const tone =
+                    severityTone(
+                      alert.severity,
+                    );
+
+                  return (
+                    <div
+                      className="recent-alert-row"
+                      key={alert.id}
+                    >
+                      <div
+                        className={`alert-severity-icon ${tone}`}
+                      >
+                        {tone ===
+                        "critical" ? (
+                          <AlertTriangle
+                            size={16}
+                          />
+                        ) : (
+                          <ShieldAlert
+                            size={16}
+                          />
+                        )}
+                      </div>
+
+                      <div className="recent-alert-main">
+                        <div className="recent-alert-title">
+                          <strong>
+                            {alert.title}
+                          </strong>
+
+                          <span
+                            className={`severity-pill ${severityClass(
+                              alert.severity,
+                            )}`}
+                          >
+                            {alert.severity}
+                          </span>
+                        </div>
+
+                        <span className="recent-alert-meta">
+                          {alert.source ||
+                            "Threat Intelligence"}
+                          {" · "}
+                          {alert.status}
+                        </span>
+                      </div>
+
+                      <time>
+                        {formatTime(
                           alert.created_at,
                         )}
-                      </span>
+                      </time>
 
+                      <span className="alert-live-dot" />
                     </div>
-
-                  </div>
-                ),
+                  );
+                })
               )}
-
             </div>
-          )}
+          </article>
 
-        </div>
+          {/* THREAT POSTURE */}
 
-        {/* ===================================
-            RECENT INDICATORS
-        =================================== */}
+          <article className="dashboard-card posture-card">
+            <div className="card-header">
+              <div>
+                <h2>Threat Posture</h2>
+                <p>
+                  Current intelligence risk profile
+                </p>
+              </div>
 
-        <div className="dashboard-card">
+              <div className="posture-score">
+                <span>
+                  Overall
+                </span>
+                <strong>
+                  {summary.average_threat_score}
+                </strong>
+                <small>/100</small>
+              </div>
+            </div>
 
-          <div className="dashboard-card-header">
+            <div className="posture-visual">
+              <div className="radar-ring ring-one" />
+              <div className="radar-ring ring-two" />
+              <div className="radar-ring ring-three" />
+
+              <div className="radar-cross horizontal" />
+              <div className="radar-cross vertical" />
+
+              <div className="radar-core">
+                <Shield size={28} />
+                <span>
+                  {summary.average_threat_score >=
+                  70
+                    ? "ELEVATED"
+                    : "MONITORED"}
+                </span>
+              </div>
+
+              <div className="radar-point point-one" />
+              <div className="radar-point point-two" />
+              <div className="radar-point point-three" />
+            </div>
+
+            <div className="posture-breakdown">
+              <div>
+                <span>
+                  <i className="posture-red" />
+                  High risk
+                </span>
+                <strong>
+                  {
+                    summary.high_risk_indicators
+                  }
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  <i className="posture-orange" />
+                  Critical
+                </span>
+                <strong>
+                  {summary.critical_alerts}
+                </strong>
+              </div>
+
+              <div>
+                <span>
+                  <i className="posture-green" />
+                  Avg score
+                </span>
+                <strong>
+                  {summary.average_threat_score}
+                </strong>
+              </div>
+            </div>
+          </article>
+
+          {/* RECENT INTELLIGENCE */}
+
+          <article className="dashboard-card intelligence-card">
+            <div className="card-header">
+              <div>
+                <h2>Latest Intelligence</h2>
+                <p>
+                  Highest priority indicators
+                </p>
+              </div>
+            </div>
+
+            <div className="intelligence-list">
+              {recentIndicators.length ===
+              0 ? (
+                <div className="empty-state">
+                  No indicators available.
+                </div>
+              ) : (
+                recentIndicators.map(
+                  (indicator) => (
+                    <div
+                      className="intelligence-row"
+                      key={indicator.id}
+                    >
+                      <div
+                        className={`intelligence-type ${severityTone(
+                          indicator.severity,
+                        )}`}
+                      >
+                        {indicator.indicator_type
+                          .slice(0, 3)
+                          .toUpperCase()}
+                      </div>
+
+                      <div className="intelligence-main">
+                        <strong>
+                          {indicator.value}
+                        </strong>
+
+                        <span>
+                          {indicator.source ||
+                            "Threat Intelligence"}
+                        </span>
+                      </div>
+
+                      <div className="intelligence-score">
+                        <span>
+                          Score
+                        </span>
+
+                        <strong>
+                          {indicator.threat_score}
+                        </strong>
+                      </div>
+                    </div>
+                  ),
+                )
+              )}
+            </div>
+          </article>
+        </section>
+
+        {/* =========================================
+            BOTTOM INTELLIGENCE BAR
+        ========================================= */}
+
+        <section className="intelligence-summary-bar">
+          <div className="summary-brand">
+            <div className="summary-brand-icon">
+              <Shield size={18} />
+            </div>
 
             <div>
-              <h3>
-                Threat Indicators
-              </h3>
+              <strong>
+                Threat Intelligence Summary
+              </strong>
 
               <span>
-                Latest intelligence
+                Operational intelligence at a glance
               </span>
             </div>
-
           </div>
 
-          {indicators.length === 0 ? (
-            <div className="dashboard-empty">
-              No threat indicators.
+          <div className="summary-stat">
+            <Activity size={18} />
+            <div>
+              <strong>
+                {formatNumber(
+                  summary.threat_indicators,
+                )}
+              </strong>
+              <span>
+                Total Indicators
+              </span>
             </div>
-          ) : (
-            <div className="dashboard-indicator-list">
+          </div>
 
-              {indicators.map(
-                (indicator) => (
-                  <div
-                    className="dashboard-indicator-item"
-                    key={indicator.id}
-                  >
-
-                    <div>
-                      <strong>
-                        {indicator.value}
-                      </strong>
-
-                      <span>
-                        {indicator.indicator_type}
-                      </span>
-                    </div>
-
-                    <div className="dashboard-indicator-meta">
-
-                      <span
-                        className={`severity-badge ${indicator.severity.toLowerCase()}`}
-                      >
-                        {indicator.severity}
-                      </span>
-
-                      <span className="score-badge">
-                        Score{" "}
-                        {
-                          indicator.threat_score
-                        }
-                      </span>
-
-                    </div>
-
-                  </div>
-                ),
-              )}
-
+          <div className="summary-stat">
+            <Target size={18} />
+            <div>
+              <strong>
+                {formatNumber(
+                  summary.high_risk_indicators,
+                )}
+              </strong>
+              <span>
+                High Risk
+              </span>
             </div>
-          )}
+          </div>
 
-        </div>
+          <div className="summary-stat">
+            <AlertTriangle size={18} />
+            <div>
+              <strong>
+                {formatNumber(
+                  summary.critical_alerts,
+                )}
+              </strong>
+              <span>
+                Critical Alerts
+              </span>
+            </div>
+          </div>
 
+          <div className="summary-stat">
+            <TrendingUp size={18} />
+            <div>
+              <strong>
+                {summary.average_threat_score}
+              </strong>
+              <span>
+                Avg Threat Score
+              </span>
+            </div>
+          </div>
+
+          <div className="summary-status">
+            <span className="status-pulse" />
+            <div>
+              <strong>
+                Monitoring Active
+              </strong>
+              <span>
+                Last updated {formatDate(
+                  lastUpdated.toISOString(),
+                )}
+              </span>
+            </div>
+          </div>
+        </section>
       </div>
-
-    </div>
+    </main>
   );
 }
 
