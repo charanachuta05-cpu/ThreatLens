@@ -258,6 +258,7 @@ async def ingest_threat_intelligence(
 def create_indicator(
     db: Session,
     indicator: IndicatorCreate,
+    actor: str,
 ) -> Indicator:
     """
     Create, locally enrich and persist an indicator.
@@ -330,7 +331,7 @@ def create_indicator(
         audit_event(
             db=db,
             action="CREATE_INDICATOR",
-            actor="system",
+            actor=actor,
             target=db_indicator.value,
         )
 

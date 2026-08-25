@@ -41,18 +41,18 @@ router = APIRouter(
 def create(
     indicator: IndicatorCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user
+    ),
 ):
     """
     Create a new threat intelligence indicator.
-
-    Access:
-        admin
-        analyst
     """
 
     return create_indicator(
         db=db,
         indicator=indicator,
+        actor=current_user.email,
     )
 
 

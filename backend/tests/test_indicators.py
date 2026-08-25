@@ -1,9 +1,12 @@
 import pytest
 
+from fastapi.testclient import TestClient
+
 from app.core.database import SessionLocal
 from app.core.security import create_access_token
-from app.threat_intel.models import Indicator
 from app.models.alert import Alert
+from app.models.audit import AuditEvent
+from app.threat_intel.models import Indicator
 
 @pytest.fixture(autouse=True)
 def clean_indicator_test_data():
@@ -14,7 +17,7 @@ def clean_indicator_test_data():
     because alerts.indicator_id has a foreign-key constraint.
     """
 
-    test_values = [
+    TEST_INDICATOR_VALUES = [
         "198.51.100.201",
         "198.51.100.202",
         "198.51.100.203",
@@ -22,6 +25,10 @@ def clean_indicator_test_data():
         "198.51.100.205",
         "198.51.100.206",
         "198.51.100.207",
+        "198.51.100.208",
+        "198.51.100.209",
+        "198.51.100.210",
+        "198.51.100.211",
     ]
 
     def cleanup():
@@ -31,7 +38,9 @@ def clean_indicator_test_data():
             indicators = (
                 db.query(Indicator)
                 .filter(
-                    Indicator.value.in_(test_values)
+                    Indicator.value.in_(
+                        TEST_INDICATOR_VALUES
+                    )
                 )
                 .all()
             )
@@ -43,15 +52,23 @@ def clean_indicator_test_data():
 
             if indicator_ids:
                 db.query(Alert).filter(
-                    Alert.indicator_id.in_(
-                        indicator_ids
-                    )
+                    Alert.indicator_id.in_(indicator_ids)
                 ).delete(
                     synchronize_session=False
                 )
 
             db.query(Indicator).filter(
-                Indicator.value.in_(test_values)
+                Indicator.value.in_(
+                    TEST_INDICATOR_VALUES
+                )
+            ).delete(
+                synchronize_session=False
+            )
+
+            db.query(AuditEvent).filter(
+                AuditEvent.target.in_(
+                    TEST_INDICATOR_VALUES
+                )
             ).delete(
                 synchronize_session=False
             )
@@ -514,3 +531,301 @@ def test_create_indicator_requires_auth(client):
     )
 
     assert response.status_code == 401
+
+# -------------------------------------------------
+# Indicator Audit Actor Attribution
+# -------------------------------------------------
+
+
+def test_admin_indicator_creation_records_admin_actor(client):
+    """
+    Manually created indicators must record the
+    authenticated admin email as the audit actor.
+    """
+
+    value = "198.51.100.208"
+
+    db = SessionLocal()
+
+    try:
+        db.query(Indicator).filter(
+            Indicator.value == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+    finally:
+        db.rollback()
+        db.close()
+
+    response = client.post(
+        "/indicators/",
+        headers=make_role_headers(
+            user_id=1,
+            email="admin@threatlens.com",
+            role="admin",
+        ),
+        json={
+            "indicator_type": "IP",
+            "value": value,
+            "severity": "HIGH",
+            "source": "pytest",
+        },
+    )
+
+    assert response.status_code in (200, 201)
+
+    db = SessionLocal()
+
+    try:
+        audit = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "CREATE_INDICATOR",
+                AuditEvent.target == value,
+            )
+            .first()
+        )
+
+        assert audit is not None
+        assert audit.actor == "admin@threatlens.com"
+
+    finally:
+        db.close()
+
+
+def test_analyst_indicator_creation_records_analyst_actor(client):
+    """
+    Manually created indicators must record the
+    authenticated analyst email as the audit actor.
+    """
+
+    value = "198.51.100.209"
+
+    db = SessionLocal()
+
+    try:
+        db.query(Indicator).filter(
+            Indicator.value == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+    finally:
+        db.rollback()
+        db.close()
+
+    response = client.post(
+        "/indicators/",
+        headers=make_role_headers(
+            user_id=2,
+            email="analyst@threatlens.com",
+            role="analyst",
+        ),
+        json={
+            "indicator_type": "IP",
+            "value": value,
+            "severity": "HIGH",
+            "source": "pytest",
+        },
+    )
+
+    assert response.status_code in (200, 201)
+
+    db = SessionLocal()
+
+    try:
+        audit = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "CREATE_INDICATOR",
+                AuditEvent.target == value,
+            )
+            .first()
+        )
+
+        assert audit is not None
+        assert audit.actor == "analyst@threatlens.com"
+
+    finally:
+        db.close()
+
+
+def test_viewer_cannot_create_indicator_and_no_audit_event(client):
+    """
+    A viewer must be rejected before indicator creation
+    and must not generate a CREATE_INDICATOR audit event.
+    """
+
+    value = "198.51.100.210"
+
+    response = client.post(
+        "/indicators/",
+        headers=make_role_headers(
+            user_id=3,
+            email="viewer@threatlens.com",
+            role="viewer",
+        ),
+        json={
+            "indicator_type": "IP",
+            "value": value,
+            "severity": "HIGH",
+            "source": "pytest",
+        },
+    )
+
+    assert response.status_code == 403
+
+    db = SessionLocal()
+
+    try:
+        assert (
+            db.query(Indicator)
+            .filter(Indicator.value == value)
+            .first()
+            is None
+        )
+
+        assert (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "CREATE_INDICATOR",
+                AuditEvent.target == value,
+            )
+            .first()
+            is None
+        )
+    finally:
+        db.close()
+
+
+def test_failed_indicator_creation_rolls_back_audit_event(
+    client,
+    monkeypatch,
+):
+    """
+    If audit logging fails after the indicator and generated
+    alert have been flushed, the entire manual creation
+    transaction must roll back.
+    """
+
+    value = "198.51.100.211"
+
+    # Ensure the rollback test value is cleaned up even though
+    # it is not part of the standard creation fixture values.
+    db = SessionLocal()
+
+    try:
+        db.query(Alert).filter(
+            Alert.indicator_id.in_(
+                db.query(Indicator.id).filter(
+                    Indicator.value == value
+                )
+            )
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(Indicator).filter(
+            Indicator.value == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.query(AuditEvent).filter(
+            AuditEvent.target == value
+        ).delete(
+            synchronize_session=False
+        )
+
+        db.commit()
+    finally:
+        db.rollback()
+        db.close()
+
+    from app.logging import audit as audit_module
+
+    real_audit_event = audit_module.audit_event
+
+    def fail_after_audit(*args, **kwargs):
+        real_audit_event(*args, **kwargs)
+        raise RuntimeError("simulated audit failure")
+
+    monkeypatch.setattr(
+        "app.threat_intel.service.audit_event",
+        fail_after_audit,
+    )
+
+    # The failure is intentional and is handled by the application's
+    # global exception handler. Disable TestClient exception re-raising
+    # so the test can inspect the resulting HTTP 500 response.
+    error_client = TestClient(
+        client.app,
+        raise_server_exceptions=False,
+    )
+
+    try:
+        response = error_client.post(
+            "/indicators/",
+            headers=make_admin_headers(),
+            json={
+                "indicator_type": "IP",
+                "value": value,
+                "severity": "HIGH",
+                "source": "pytest",
+            },
+        )
+
+        assert response.status_code == 500
+
+    finally:
+        error_client.close()
+
+    # Verify the transaction rollback removed the indicator.
+    db = SessionLocal()
+
+    try:
+        assert (
+            db.query(Indicator)
+            .filter(
+                Indicator.value == value
+            )
+            .first()
+            is None
+        )
+
+        assert (
+            db.query(Alert)
+            .filter(
+                Alert.title == f"Threat Indicator: {value}"
+            )
+            .first()
+            is None
+        )
+
+        assert (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "CREATE_INDICATOR",
+                AuditEvent.target == value,
+            )
+            .first()
+            is None
+        )
+
+    finally:
+        db.close()
