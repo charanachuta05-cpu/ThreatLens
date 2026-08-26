@@ -6,6 +6,12 @@ from app.models.alert import Alert, AlertStatus
 from app.threat_intel.models import Indicator
 
 
+ACTIVE_ALERT_STATUSES = [
+    AlertStatus.OPEN,
+    AlertStatus.IN_PROGRESS,
+]
+
+
 def get_dashboard_summary(
     db: Session,
 ) -> DashboardSummary:
@@ -34,21 +40,23 @@ def get_dashboard_summary(
     active_alerts = (
         db.query(Alert)
         .filter(
-            Alert.status.in_(
-                [
-                    AlertStatus.OPEN,
-                    AlertStatus.IN_PROGRESS,
-                ]
-            )
+            Alert.status.in_(ACTIVE_ALERT_STATUSES)
+        )
+        .count()
+    )
+
+    critical_alerts = (
+        db.query(Alert)
+        .filter(
+            Alert.status.in_(ACTIVE_ALERT_STATUSES),
+            Alert.severity == "CRITICAL",
         )
         .count()
     )
 
     average = (
         db.query(
-            func.avg(
-                Indicator.threat_score
-            )
+            func.avg(Indicator.threat_score)
         )
         .scalar()
         or 0
@@ -59,6 +67,7 @@ def get_dashboard_summary(
         critical_indicators=critical,
         high_indicators=high,
         active_alerts=active_alerts,
+        critical_alerts=critical_alerts,
         average_threat_score=round(
             float(average),
             2,

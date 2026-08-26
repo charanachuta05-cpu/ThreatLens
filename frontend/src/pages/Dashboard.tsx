@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleAlert,
-  Eye,
   Globe2,
   RefreshCw,
   Search,
@@ -26,17 +25,15 @@ import apiClient from "../api/client";
 import "./Dashboard.css";
 
 interface DashboardSummary {
+  total_indicators: number;
+  critical_indicators: number;
+  high_indicators: number;
   active_alerts: number;
   critical_alerts: number;
-  threat_indicators: number;
-  high_risk_indicators: number;
   average_threat_score: number;
-  visible_alerts: number;
 
   recent_alerts?: DashboardAlert[];
   recent_indicators?: DashboardIndicator[];
-
-  [key: string]: unknown;
 }
 
 interface DashboardAlert {
@@ -72,12 +69,12 @@ interface Metric {
 }
 
 const EMPTY_SUMMARY: DashboardSummary = {
+  total_indicators: 0,
+  critical_indicators: 0,
+  high_indicators: 0,
   active_alerts: 0,
   critical_alerts: 0,
-  threat_indicators: 0,
-  high_risk_indicators: 0,
   average_threat_score: 0,
-  visible_alerts: 0,
 };
 
 function formatNumber(value: number): string {
@@ -440,8 +437,8 @@ function Dashboard() {
       value: summary.active_alerts,
       icon: ShieldAlert,
       tone: "red",
-      change: "Live security queue",
-      changeTone: "up",
+      change: "Open + in-progress",
+      changeTone: summary.active_alerts > 0 ? "up" : "neutral",
     },
     {
       label: "Critical Alerts",
@@ -459,31 +456,43 @@ function Dashboard() {
     },
     {
       label: "Threat Indicators",
-      value: summary.threat_indicators,
+      value: summary.total_indicators,
       icon: Activity,
       tone: "purple",
       change: "Intelligence inventory",
-      changeTone: "up",
+      changeTone: "neutral",
     },
     {
-      label: "High Risk Indicators",
-      value:
-        summary.high_risk_indicators,
+      label: "Critical Indicators",
+      value: summary.critical_indicators,
       icon: Target,
       tone: "yellow",
       change:
-        summary.high_risk_indicators > 0
-          ? "Requires analyst review"
-          : "No high-risk IOCs",
+        summary.critical_indicators > 0
+          ? "High-priority intelligence"
+          : "No critical indicators",
       changeTone:
-        summary.high_risk_indicators > 0
+        summary.critical_indicators > 0
+          ? "up"
+          : "neutral",
+    },
+    {
+      label: "High-Risk Indicators",
+      value: summary.high_indicators,
+      icon: Target,
+      tone: "blue",
+      change:
+        summary.high_indicators > 0
+          ? "Requires analyst review"
+          : "No high-risk indicators",
+      changeTone:
+        summary.high_indicators > 0
           ? "up"
           : "neutral",
     },
     {
       label: "Average Threat Score",
-      value:
-        summary.average_threat_score,
+      value: summary.average_threat_score,
       icon: TrendingUp,
       tone: "green",
       change:
@@ -494,14 +503,6 @@ function Dashboard() {
         summary.average_threat_score >= 70
           ? "up"
           : "neutral",
-    },
-    {
-      label: "Visible Alerts",
-      value: summary.visible_alerts,
-      icon: Eye,
-      tone: "blue",
-      change: "Current analyst view",
-      changeTone: "neutral",
     },
   ];
 
@@ -1162,7 +1163,7 @@ function Dashboard() {
                 </span>
                 <strong>
                   {
-                    summary.high_risk_indicators
+                    summary.high_indicators
                   }
                 </strong>
               </div>
@@ -1278,7 +1279,7 @@ function Dashboard() {
             <div>
               <strong>
                 {formatNumber(
-                  summary.threat_indicators,
+                  summary.recent_indicators?.length ?? 0,
                 )}
               </strong>
               <span>
@@ -1292,7 +1293,7 @@ function Dashboard() {
             <div>
               <strong>
                 {formatNumber(
-                  summary.high_risk_indicators,
+                  summary.high_indicators,
                 )}
               </strong>
               <span>
