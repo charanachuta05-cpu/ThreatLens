@@ -24,6 +24,13 @@ import axios from "axios";
 import apiClient from "../api/client";
 import "./Dashboard.css";
 
+interface DashboardAlertTrendPoint {
+  date: string;
+  total: number;
+  high: number;
+  critical: number;
+}
+
 interface DashboardSummary {
   total_indicators: number;
   critical_indicators: number;
@@ -31,6 +38,7 @@ interface DashboardSummary {
   active_alerts: number;
   critical_alerts: number;
   average_threat_score: number;
+  alert_trend: DashboardAlertTrendPoint[];
 
   recent_alerts?: DashboardAlert[];
   recent_indicators?: DashboardIndicator[];
@@ -75,6 +83,7 @@ const EMPTY_SUMMARY: DashboardSummary = {
   active_alerts: 0,
   critical_alerts: 0,
   average_threat_score: 0,
+  alert_trend: [],
 };
 
 function formatNumber(value: number): string {
@@ -367,61 +376,7 @@ function Dashboard() {
   const maxIndicatorType =
     indicatorTypes[0]?.[1] ?? 1;
 
-  const alertTrend = useMemo(() => {
-    const days = Array.from(
-      { length: 7 },
-      (_, index) => {
-        const date = new Date();
-
-        date.setHours(0, 0, 0, 0);
-        date.setDate(
-          date.getDate() - (6 - index),
-        );
-
-        return date;
-      },
-    );
-
-    return days.map((day) => {
-      const nextDay = new Date(day);
-
-      nextDay.setDate(day.getDate() + 1);
-
-      const dayAlerts = alerts.filter(
-        (alert) => {
-          const created =
-            new Date(alert.created_at);
-
-          return (
-            created >= day &&
-            created < nextDay
-          );
-        },
-      );
-
-      return {
-        label: day.toLocaleDateString(
-          [],
-          {
-            day: "2-digit",
-            month: "short",
-          },
-        ),
-        total: dayAlerts.length,
-        high: dayAlerts.filter(
-          (alert) =>
-            ["HIGH", "CRITICAL"].includes(
-              alert.severity?.toUpperCase(),
-            ),
-        ).length,
-        critical: dayAlerts.filter(
-          (alert) =>
-            alert.severity?.toUpperCase() ===
-            "CRITICAL",
-        ).length,
-      };
-    });
-  }, [alerts]);
+  const alertTrend = summary.alert_trend;
 
   const maxTrend =
     Math.max(
@@ -736,7 +691,7 @@ function Dashboard() {
                     (point) => (
                       <div
                         className="trend-column"
-                        key={point.label}
+                        key={point.date}
                       >
                         <div className="trend-bar-wrap">
                           <div
@@ -775,7 +730,13 @@ function Dashboard() {
                         </div>
 
                         <span>
-                          {point.label}
+                          {new Date(`${point.date}T00:00:00`).toLocaleDateString(
+                            [],
+                            {
+                              day: "2-digit",
+                              month: "short",
+                            },
+                          )}
                         </span>
                       </div>
                     ),
@@ -1279,7 +1240,7 @@ function Dashboard() {
             <div>
               <strong>
                 {formatNumber(
-                  summary.recent_indicators?.length ?? 0,
+                  summary.total_indicators
                 )}
               </strong>
               <span>
