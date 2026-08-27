@@ -127,10 +127,17 @@ function DashboardLayout() {
             MONITORING
           </p>
 
-          {navigation.map(
-            (item) => {
-              const Icon =
-                item.icon;
+          {navigation
+            .filter(
+              (item) =>
+                !item.allowedRoles ||
+                (role &&
+                  item.allowedRoles.includes(role)),
+            )
+            .map(
+              (item) => {
+                const Icon =
+                  item.icon;
 
               return (
                 <NavLink
@@ -155,9 +162,9 @@ function DashboardLayout() {
                     {item.name}
                   </span>
                 </NavLink>
-              );
-            },
-          )}
+                );
+              },
+            )}
 
         </nav>
 
