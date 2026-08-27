@@ -8,7 +8,6 @@ import {
   ShieldAlert,
   Search,
   Bell,
-  Settings,
   LogOut,
 } from "lucide-react";
 
@@ -171,26 +170,6 @@ function DashboardLayout() {
         {/* Bottom Controls */}
 
         <div className="sidebar-bottom">
-
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `nav-item ${
-                isActive
-                  ? "active"
-                  : ""
-              }`
-            }
-          >
-            <Settings
-              size={19}
-              aria-hidden="true"
-            />
-
-            <span>
-              Settings
-            </span>
-          </NavLink>
 
           <button
             type="button"
