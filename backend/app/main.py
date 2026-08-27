@@ -25,7 +25,6 @@ from app.api.routes import (
     investigations,
     threat_hunting,
     threat_intel,
-    threats,
     users,
 )
 
@@ -142,7 +141,6 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(admin.router)
 app.include_router(alerts.router)
-app.include_router(threats.router)
 
 app.include_router(websocket_router)
 logger.info("WebSocket router registered")
