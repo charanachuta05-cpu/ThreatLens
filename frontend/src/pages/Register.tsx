@@ -3,21 +3,31 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+} from "react-router-dom";
 
-import { useAuth } from "../context/useAuth";
+import { registerUser } from "../api/auth";
 
 import "./Login.css";
 
-function Login() {
+function Register() {
   const navigate = useNavigate();
-  const { login, loading } = useAuth();
+
+  const [username, setUsername] =
+    useState("");
 
   const [email, setEmail] =
     useState("");
 
   const [password, setPassword] =
     useState("");
+
+  const [
+    confirmPassword,
+    setConfirmPassword,
+  ] = useState("");
 
   const [error, setError] =
     useState("");
@@ -31,16 +41,52 @@ function Login() {
     event.preventDefault();
 
     setError("");
+
+    const normalizedUsername =
+      username.trim();
+
+    const normalizedEmail =
+      email.trim();
+
+    if (!normalizedUsername) {
+      setError("Username is required.");
+      return;
+    }
+
+    if (!normalizedEmail) {
+      setError("Email is required.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError(
+        "Password must contain at least 8 characters.",
+      );
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError(
+        "Passwords do not match.",
+      );
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      await login({
-        email: email.trim(),
+      await registerUser({
+        username: normalizedUsername,
+        email: normalizedEmail,
         password,
       });
 
-      navigate("/dashboard", {
+      navigate("/login", {
         replace: true,
+        state: {
+          message:
+            "Account created successfully. Please sign in.",
+        },
       });
     } catch (err: unknown) {
       if (
@@ -51,11 +97,13 @@ function Login() {
         const detail =
           err.response?.data?.detail;
 
-        if (typeof detail === "string") {
+        if (
+          typeof detail === "string"
+        ) {
           setError(detail);
         } else {
           setError(
-            "Login failed. Please check your credentials.",
+            "Unable to create account. Please check your details.",
           );
         }
       } else if (
@@ -64,16 +112,13 @@ function Login() {
         setError(err.message);
       } else {
         setError(
-          "Login failed. Please check your credentials.",
+          "Unable to create account. Please try again.",
         );
       }
     } finally {
       setSubmitting(false);
     }
   }
-
-  const isSubmitting =
-    submitting || loading;
 
   return (
     <div className="login-page">
@@ -82,9 +127,9 @@ function Login() {
           <h1>ThreatLens</h1>
 
           <p>
-            Threat Intelligence
+            Create your
             <br />
-            Platform
+            Threat Intelligence account
           </p>
         </div>
 
@@ -92,6 +137,27 @@ function Login() {
           className="login-form"
           onSubmit={handleSubmit}
         >
+          <div className="form-group">
+            <label htmlFor="username">
+              Username
+            </label>
+
+            <input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(event) =>
+                setUsername(
+                  event.target.value,
+                )
+              }
+              placeholder="Enter username"
+              autoComplete="username"
+              required
+              disabled={submitting}
+            />
+          </div>
+
           <div className="form-group">
             <label htmlFor="email">
               Email
@@ -109,7 +175,7 @@ function Login() {
               placeholder="Enter your email"
               autoComplete="email"
               required
-              disabled={isSubmitting}
+              disabled={submitting}
             />
           </div>
 
@@ -127,10 +193,33 @@ function Login() {
                   event.target.value,
                 )
               }
-              placeholder="Enter your password"
-              autoComplete="current-password"
+              placeholder="Minimum 8 characters"
+              autoComplete="new-password"
+              minLength={8}
               required
-              disabled={isSubmitting}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="confirm-password">
+              Confirm Password
+            </label>
+
+            <input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) =>
+                setConfirmPassword(
+                  event.target.value,
+                )
+              }
+              placeholder="Confirm your password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              disabled={submitting}
             />
           </div>
 
@@ -146,11 +235,11 @@ function Login() {
           <button
             type="submit"
             className="login-button"
-            disabled={isSubmitting}
+            disabled={submitting}
           >
-            {isSubmitting
-              ? "Signing in..."
-              : "Sign In"}
+            {submitting
+              ? "Creating account..."
+              : "Create Account"}
           </button>
         </form>
 
@@ -162,16 +251,16 @@ function Login() {
             fontSize: "14px",
           }}
         >
-          New to ThreatLens?{" "}
+          Already have an account?{" "}
           <Link
-            to="/register"
+            to="/login"
             style={{
               color: "#60a5fa",
               textDecoration: "none",
               fontWeight: 600,
             }}
           >
-            Create Account
+            Sign In
           </Link>
         </div>
       </div>
@@ -179,4 +268,4 @@ function Login() {
   );
 }
 
-export default Login;
+export default Register;

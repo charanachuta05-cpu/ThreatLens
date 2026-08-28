@@ -5,6 +5,7 @@ import {
 } from "react-router-dom";
 
 import Login from "./pages/Login";
+import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Alerts from "./pages/Alerts";
 import Indicators from "./pages/Indicators";
@@ -54,6 +55,20 @@ function App() {
             />
           ) : (
             <Login />
+          )
+        }
+      />
+
+      <Route
+        path="/register"
+        element={
+          authenticated ? (
+            <Navigate
+              to="/dashboard"
+              replace
+            />
+          ) : (
+            <Register />
           )
         }
       />
