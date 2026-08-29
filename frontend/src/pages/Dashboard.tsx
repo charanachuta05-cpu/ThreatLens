@@ -10,6 +10,7 @@ import {
   ChevronDown,
   CircleAlert,
   Globe2,
+  Plus,
   RefreshCw,
   Search,
   Shield,
@@ -18,6 +19,9 @@ import {
   TrendingUp,
   Zap,
 } from "lucide-react";
+import NewThreatScanModal from "../components/NewThreatScanModal";
+import type { Indicator } from "../api/indicators";
+import { useAuth } from "../context/useAuth";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
@@ -183,6 +187,12 @@ function getApiErrorMessage(error: unknown): string {
 }
 
 function Dashboard() {
+  const { role } = useAuth();
+
+  const canRunThreatScan =
+    role === "admin" ||
+    role === "analyst";
+
   const [summary, setSummary] =
     useState<DashboardSummary>(EMPTY_SUMMARY);
 
@@ -203,6 +213,9 @@ function Dashboard() {
 
   const [lastUpdated, setLastUpdated] =
     useState(new Date());
+
+  const [scanModalOpen, setScanModalOpen] =
+  useState(false);
 
   const loadDashboard = useCallback(
     async (background = false) => {
@@ -280,6 +293,19 @@ function Dashboard() {
       }
     },
     [],
+  );
+
+  const handleScanComplete = useCallback(
+    async (indicator: Indicator) => {
+      console.info(
+        "ThreatLens scan completed:",
+        indicator.id,
+        indicator.value,
+      );
+
+      await loadDashboard(true);
+    },
+    [loadDashboard],
   );
 
   useEffect(() => {
@@ -524,6 +550,19 @@ function Dashboard() {
               />
               Refresh
             </button>
+
+            {canRunThreatScan && (
+              <button
+                type="button"
+                className="dashboard-scan-button"
+                onClick={() =>
+                  setScanModalOpen(true)
+                }
+              >
+                <Plus size={17} />
+                New Threat Scan
+              </button>
+            )}
 
             <button
               type="button"
@@ -1303,6 +1342,16 @@ function Dashboard() {
             </div>
           </div>
         </section>
+
+        {canRunThreatScan && (
+          <NewThreatScanModal
+            open={scanModalOpen}
+            onClose={() =>
+              setScanModalOpen(false)
+            }
+            onScanComplete={handleScanComplete}
+          />
+        )}
       </div>
     </main>
   );

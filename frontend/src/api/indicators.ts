@@ -1,10 +1,22 @@
 import apiClient from "./client";
 
+export type IndicatorType =
+  | "IP"
+  | "DOMAIN"
+  | "URL"
+  | "HASH";
+
+export type IndicatorSeverity =
+  | "LOW"
+  | "MEDIUM"
+  | "HIGH"
+  | "CRITICAL";
+
 export interface Indicator {
   id: number;
-  indicator_type: "IP" | "DOMAIN" | "URL" | "HASH";
+  indicator_type: IndicatorType;
   value: string;
-  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  severity: IndicatorSeverity;
   source: string;
   description: string | null;
   threat_score: number;
@@ -25,6 +37,14 @@ export interface IndicatorQuery {
   order?: "asc" | "desc";
 }
 
+export interface IndicatorCreate {
+  indicator_type: IndicatorType;
+  value: string;
+  severity: IndicatorSeverity;
+  source: string;
+  description?: string | null;
+}
+
 export async function getIndicators(
   params: IndicatorQuery = {},
 ): Promise<Indicator[]> {
@@ -33,6 +53,17 @@ export async function getIndicators(
     {
       params,
     },
+  );
+
+  return response.data;
+}
+
+export async function createIndicator(
+  payload: IndicatorCreate,
+): Promise<Indicator> {
+  const response = await apiClient.post<Indicator>(
+    "/indicators/",
+    payload,
   );
 
   return response.data;
