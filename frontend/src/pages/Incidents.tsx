@@ -20,9 +20,11 @@ import {
   addIncidentNote,
   createIncident,
   getIncidents,
+  resolveIncident,
   updateIncident,
   type Incident,
   type IncidentPriority,
+  type IncidentResolutionType,
   type IncidentStatus,
 } from "../api/incidents";
 
@@ -45,6 +47,13 @@ const statuses: IncidentStatus[] = [
   "IN_PROGRESS",
   "RESOLVED",
   "CLOSED",
+];
+
+const resolutionTypes: IncidentResolutionType[] = [
+  "TRUE_POSITIVE",
+  "FALSE_POSITIVE",
+  "BENIGN",
+  "DUPLICATE",
 ];
 
 function formatDate(value: string | null): string {
@@ -101,6 +110,18 @@ function Incidents() {
 
   const [note, setNote] =
     useState("");
+
+  const [
+    resolutionType,
+    setResolutionType,
+  ] = useState<IncidentResolutionType>(
+    "TRUE_POSITIVE",
+  );
+
+  const [
+    resolutionSummary,
+    setResolutionSummary,
+  ] = useState("");
 
   const [selectedAssignee, setSelectedAssignee] =
     useState("");
@@ -286,6 +307,62 @@ function Incidents() {
     } catch {
       setError(
         "Unable to update incident assignment.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+
+  async function handleResolveIncident(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!selectedIncident) {
+      return;
+    }
+
+    const summary = resolutionSummary.trim();
+
+    if (summary.length < 3) {
+      setError(
+        "Enter a resolution summary of at least 3 characters.",
+      );
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const updated = await resolveIncident(
+        selectedIncident.id,
+        {
+          resolution_type: resolutionType,
+          resolution_summary: summary,
+        },
+      );
+
+      setSelectedIncident(updated);
+
+      setIncidents((current) =>
+        current.map((incident) =>
+          incident.id === updated.id
+            ? updated
+            : incident,
+        ),
+      );
+
+      setResolutionSummary("");
+
+      setSuccess(
+        `Incident #${updated.id} resolved successfully.`,
+      );
+    } catch {
+      setError(
+        "Unable to resolve incident.",
       );
     } finally {
       setSaving(false);
@@ -736,18 +813,42 @@ function Incidents() {
                       )
                     }
                   >
-                    {statuses.map((item) => (
-                      <option
-                        key={item}
-                        value={item}
-                      >
-                        {
-                          readableStatus(
-                            item,
-                          )
+                    {statuses
+                      .filter((item) => {
+                        if (
+                          item === "RESOLVED"
+                        ) {
+                          return (
+                            selectedIncident.status
+                            === "RESOLVED"
+                          );
                         }
-                      </option>
-                    ))}
+
+                        if (
+                          item === "CLOSED"
+                        ) {
+                          return (
+                            selectedIncident.status
+                            === "RESOLVED"
+                            || selectedIncident.status
+                              === "CLOSED"
+                          );
+                        }
+
+                        return true;
+                      })
+                      .map((item) => (
+                        <option
+                          key={item}
+                          value={item}
+                        >
+                          {
+                            readableStatus(
+                              item,
+                            )
+                          }
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -784,6 +885,137 @@ function Incidents() {
                     }
                   </strong>
                 </div>
+              </div>
+
+              <div className="incident-resolution-section">
+                <div className="incident-resolution-heading">
+                  <span>CASE RESOLUTION</span>
+
+                  <h3>
+                    {
+                      selectedIncident.status === "RESOLVED"
+                      || selectedIncident.status === "CLOSED"
+                        ? "Resolution Details"
+                        : "Resolve Incident"
+                    }
+                  </h3>
+                </div>
+
+                {
+                  selectedIncident.status === "RESOLVED"
+                  || selectedIncident.status === "CLOSED"
+                    ? (
+                      <div className="incident-resolution-details">
+                        <div>
+                          <span>Classification</span>
+                          <strong>
+                            {
+                              selectedIncident.resolution_type
+                                ? readableStatus(
+                                    selectedIncident.resolution_type,
+                                  )
+                                : "—"
+                            }
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Resolved By</span>
+                          <strong>
+                            {
+                              selectedIncident.resolved_by
+                                ? getAssigneeName(
+                                    selectedIncident.resolved_by,
+                                  )
+                                : "—"
+                            }
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span>Resolved At</span>
+                          <strong>
+                            {
+                              formatDate(
+                                selectedIncident.resolved_at,
+                              )
+                            }
+                          </strong>
+                        </div>
+
+                        <div className="incident-resolution-summary">
+                          <span>Resolution Summary</span>
+                          <p>
+                            {
+                              selectedIncident.resolution_summary
+                              ?? "—"
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    )
+                    : (
+                      <form
+                        className="incident-resolution-form"
+                        onSubmit={(event) =>
+                          void handleResolveIncident(event)
+                        }
+                      >
+                        <label>
+                          <span>Classification</span>
+
+                          <select
+                            value={resolutionType}
+                            disabled={saving}
+                            onChange={(event) =>
+                              setResolutionType(
+                                event.target.value as IncidentResolutionType,
+                              )
+                            }
+                          >
+                            {resolutionTypes.map((item) => (
+                              <option
+                                key={item}
+                                value={item}
+                              >
+                                {readableStatus(item)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="incident-resolution-summary-field">
+                          <span>Resolution Summary</span>
+
+                          <textarea
+                            value={resolutionSummary}
+                            disabled={saving}
+                            maxLength={5000}
+                            placeholder="Describe the investigation outcome and resolution."
+                            onChange={(event) =>
+                              setResolutionSummary(
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </label>
+
+                        <button
+                          type="submit"
+                          disabled={
+                            saving
+                            || resolutionSummary.trim().length < 3
+                          }
+                        >
+                          {
+                            saving
+                              ? "Resolving..."
+                              : "Resolve Incident"
+                          }
+                        </button>
+                      </form>
+                    )
+                }
               </div>
 
               <div className="incident-assignment-section">

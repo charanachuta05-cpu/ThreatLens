@@ -12,6 +12,12 @@ export type IncidentStatus =
   | "RESOLVED"
   | "CLOSED";
 
+export type IncidentResolutionType =
+  | "TRUE_POSITIVE"
+  | "FALSE_POSITIVE"
+  | "BENIGN"
+  | "DUPLICATE";
+
 export interface IncidentAlert {
   id: number;
   title: string;
@@ -52,6 +58,9 @@ export interface Incident {
   created_at: string;
   updated_at: string | null;
   resolved_at: string | null;
+  resolution_type: IncidentResolutionType | null;
+  resolution_summary: string | null;
+  resolved_by: number | null;
   alerts: IncidentAlert[];
   indicators: IncidentIndicator[];
   notes: IncidentNote[];
@@ -72,6 +81,11 @@ export interface IncidentUpdate {
   priority?: IncidentPriority;
   status?: IncidentStatus;
   assigned_to?: number | null;
+}
+
+export interface IncidentResolve {
+  resolution_type: IncidentResolutionType;
+  resolution_summary: string;
 }
 
 export interface IncidentQuery {
@@ -113,6 +127,18 @@ export async function updateIncident(
 ): Promise<Incident> {
   const response = await apiClient.put<Incident>(
     `/incidents/${incidentId}`,
+    payload,
+  );
+
+  return response.data;
+}
+
+export async function resolveIncident(
+  incidentId: number,
+  payload: IncidentResolve,
+): Promise<Incident> {
+  const response = await apiClient.post<Incident>(
+    `/incidents/${incidentId}/resolve`,
     payload,
   );
 

@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.incident import (
     IncidentPriority,
+    IncidentResolutionType,
     IncidentStatus,
 )
 
@@ -66,6 +67,30 @@ class IncidentUpdate(BaseModel):
         default=None,
         ge=1,
     )
+
+
+class IncidentResolve(BaseModel):
+    resolution_type: IncidentResolutionType
+
+    resolution_summary: str = Field(
+        min_length=3,
+        max_length=5000,
+    )
+
+    @field_validator("resolution_summary")
+    @classmethod
+    def normalize_resolution_summary(
+        cls,
+        value: str,
+    ) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Resolution summary cannot be empty."
+            )
+
+        return value
 
 
 class IncidentNoteCreate(BaseModel):
@@ -148,6 +173,9 @@ class IncidentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     resolved_at: datetime | None
+    resolution_type: IncidentResolutionType | None
+    resolution_summary: str | None
+    resolved_by: int | None
 
     alerts: list[IncidentAlertResponse] = Field(
         default_factory=list,

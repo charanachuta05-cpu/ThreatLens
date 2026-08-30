@@ -30,6 +30,13 @@ class IncidentStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
+class IncidentResolutionType(str, Enum):
+    TRUE_POSITIVE = "TRUE_POSITIVE"
+    FALSE_POSITIVE = "FALSE_POSITIVE"
+    BENIGN = "BENIGN"
+    DUPLICATE = "DUPLICATE"
+
+
 incident_alerts = Table(
     "incident_alerts",
     Base.metadata,
@@ -131,6 +138,25 @@ class Incident(Base):
         nullable=True,
     )
 
+
+    resolution_type = Column(
+        SqlEnum(IncidentResolutionType),
+        nullable=True,
+        index=True,
+    )
+
+    resolution_summary = Column(
+        Text,
+        nullable=True,
+    )
+
+    resolved_by = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
+
     creator = relationship(
         "User",
         foreign_keys=[created_by],
@@ -139,6 +165,12 @@ class Incident(Base):
     assignee = relationship(
         "User",
         foreign_keys=[assigned_to],
+    )
+
+
+    resolver = relationship(
+        "User",
+        foreign_keys=[resolved_by],
     )
 
     alerts = relationship(

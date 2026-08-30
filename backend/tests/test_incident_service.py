@@ -7,12 +7,14 @@ from app.models.incident import (
     Incident,
     IncidentNote,
     IncidentPriority,
+    IncidentResolutionType,
     IncidentStatus,
 )
 from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
     IncidentNoteCreate,
+    IncidentResolve,
     IncidentUpdate,
 )
 from app.services.incident_service import (
@@ -26,6 +28,7 @@ from app.services.incident_service import (
     unlink_alert,
     unlink_indicator,
     update_incident,
+    resolve_incident,
 )
 from app.threat_intel.models import Indicator
 
@@ -251,7 +254,7 @@ def test_create_incident_rejects_missing_resources():
         db.close()
 
 
-def test_update_incident_status_sets_and_clears_resolved_at():
+def test_incident_resolution_lifecycle():
     db = SessionLocal()
 
     try:
@@ -264,16 +267,65 @@ def test_update_incident_status_sets_and_clears_resolved_at():
             created_by=1,
         )
 
+        with pytest.raises(HTTPException) as exc:
+            update_incident(
+                db=db,
+                incident=incident,
+                incident_data=IncidentUpdate(
+                    status=IncidentStatus.RESOLVED,
+                ),
+            )
+
+        assert exc.value.status_code == 400
+
+        with pytest.raises(HTTPException) as exc:
+            update_incident(
+                db=db,
+                incident=incident,
+                incident_data=IncidentUpdate(
+                    status=IncidentStatus.CLOSED,
+                ),
+            )
+
+        assert exc.value.status_code == 400
+
+        resolve_incident(
+            db=db,
+            incident=incident,
+            resolution_data=IncidentResolve(
+                resolution_type=(
+                    IncidentResolutionType.TRUE_POSITIVE
+                ),
+                resolution_summary=(
+                    "Confirmed malicious activity."
+                ),
+            ),
+            resolved_by=2,
+        )
+
+        assert incident.status == IncidentStatus.RESOLVED
+        assert (
+            incident.resolution_type
+            == IncidentResolutionType.TRUE_POSITIVE
+        )
+        assert (
+            incident.resolution_summary
+            == "Confirmed malicious activity."
+        )
+        assert incident.resolved_by == 2
+        assert incident.resolved_at is not None
+
         update_incident(
             db=db,
             incident=incident,
             incident_data=IncidentUpdate(
-                status=IncidentStatus.RESOLVED,
+                status=IncidentStatus.CLOSED,
             ),
         )
 
-        assert incident.status == IncidentStatus.RESOLVED
+        assert incident.status == IncidentStatus.CLOSED
         assert incident.resolved_at is not None
+        assert incident.resolved_by == 2
 
         update_incident(
             db=db,
@@ -285,6 +337,9 @@ def test_update_incident_status_sets_and_clears_resolved_at():
 
         assert incident.status == IncidentStatus.IN_PROGRESS
         assert incident.resolved_at is None
+        assert incident.resolution_type is None
+        assert incident.resolution_summary is None
+        assert incident.resolved_by is None
 
     finally:
         db.rollback()

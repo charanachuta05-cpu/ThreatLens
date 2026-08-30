@@ -228,7 +228,7 @@ def test_admin_can_list_and_read_incident(client):
     }
 
 
-def test_analyst_can_update_and_resolve_incident(client):
+def test_analyst_can_resolve_incident(client):
     headers = make_headers(
         2,
         "analyst@threatlens.com",
@@ -244,14 +244,38 @@ def test_analyst_can_update_and_resolve_incident(client):
         },
     )
 
+    assert created.status_code == 201
     incident_id = created.json()["id"]
 
-    response = client.put(
+    direct = client.put(
         f"/incidents/{incident_id}",
         headers=headers,
         json={
             "status": "RESOLVED",
-            "priority": "HIGH",
+        },
+    )
+
+    assert direct.status_code == 400
+
+    premature_close = client.put(
+        f"/incidents/{incident_id}",
+        headers=headers,
+        json={
+            "status": "CLOSED",
+        },
+    )
+
+    assert premature_close.status_code == 400
+
+    response = client.post(
+        f"/incidents/{incident_id}/resolve",
+        headers=headers,
+        json={
+            "resolution_type": "TRUE_POSITIVE",
+            "resolution_summary": (
+                "Confirmed malicious activity "
+                "after analyst investigation."
+            ),
         },
     )
 
@@ -260,8 +284,102 @@ def test_analyst_can_update_and_resolve_incident(client):
     data = response.json()
 
     assert data["status"] == "RESOLVED"
-    assert data["priority"] == "HIGH"
+    assert data["resolution_type"] == "TRUE_POSITIVE"
+    assert data["resolution_summary"] == (
+        "Confirmed malicious activity "
+        "after analyst investigation."
+    )
+    assert data["resolved_by"] == 2
     assert data["resolved_at"] is not None
+
+    closed = client.put(
+        f"/incidents/{incident_id}",
+        headers=headers,
+        json={
+            "status": "CLOSED",
+            "priority": "HIGH",
+        },
+    )
+
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "CLOSED"
+    assert closed.json()["priority"] == "HIGH"
+    assert closed.json()["resolution_type"] == "TRUE_POSITIVE"
+    assert closed.json()["resolved_by"] == 2
+
+    reopened = client.put(
+        f"/incidents/{incident_id}",
+        headers=headers,
+        json={
+            "status": "IN_PROGRESS",
+        },
+    )
+
+    assert reopened.status_code == 200
+
+    reopened_data = reopened.json()
+
+    assert reopened_data["status"] == "IN_PROGRESS"
+    assert reopened_data["resolved_at"] is None
+    assert reopened_data["resolution_type"] is None
+    assert reopened_data["resolution_summary"] is None
+    assert reopened_data["resolved_by"] is None
+
+
+def test_resolve_incident_records_audit_event(client):
+    headers = make_headers(
+        2,
+        "analyst@threatlens.com",
+        "analyst",
+    )
+
+    created = client.post(
+        "/incidents/",
+        headers=headers,
+        json={
+            "title": f"{TEST_PREFIX} Resolution Audit",
+            "description": "Resolution audit test",
+        },
+    )
+
+    assert created.status_code == 201
+    incident_id = created.json()["id"]
+
+    response = client.post(
+        f"/incidents/{incident_id}/resolve",
+        headers=headers,
+        json={
+            "resolution_type": "FALSE_POSITIVE",
+            "resolution_summary": (
+                "Investigation determined the "
+                "activity was a false positive."
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+
+    from app.core.database import SessionLocal
+    from app.models.audit import AuditEvent
+
+    db = SessionLocal()
+
+    try:
+        event = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.action == "RESOLVE_INCIDENT",
+                AuditEvent.target == f"incident:{incident_id}",
+            )
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+
+        assert event is not None
+        assert event.actor == "analyst@threatlens.com"
+
+    finally:
+        db.close()
 
 
 def test_analyst_can_add_note(client):

@@ -9,12 +9,14 @@ from app.models.alert import Alert
 from app.models.incident import (
     Incident,
     IncidentNote,
+    IncidentResolutionType,
     IncidentStatus,
 )
 from app.models.user import User
 from app.schemas.incident import (
     IncidentCreate,
     IncidentNoteCreate,
+    IncidentResolve,
     IncidentUpdate,
 )
 from app.threat_intel.models import Indicator
@@ -228,14 +230,32 @@ def update_incident(
     if "status" in update_data:
         new_status = update_data["status"]
 
+        if new_status == IncidentStatus.RESOLVED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Use the incident resolution endpoint "
+                    "to resolve an incident."
+                ),
+            )
+
+        if new_status == IncidentStatus.CLOSED:
+            if incident.status != IncidentStatus.RESOLVED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "Only a resolved incident can be closed."
+                    ),
+                )
+
         if new_status in {
-            IncidentStatus.RESOLVED,
-            IncidentStatus.CLOSED,
+            IncidentStatus.OPEN,
+            IncidentStatus.IN_PROGRESS,
         }:
-            if incident.resolved_at is None:
-                incident.resolved_at = _utc_now()
-        else:
             incident.resolved_at = None
+            incident.resolution_type = None
+            incident.resolution_summary = None
+            incident.resolved_by = None
 
     for key, value in update_data.items():
         setattr(incident, key, value)
@@ -253,6 +273,57 @@ def update_incident(
 
     return incident
 
+
+def resolve_incident(
+    db: Session,
+    incident: Incident,
+    resolution_data: IncidentResolve,
+    resolved_by: int,
+    *,
+    commit: bool = True,
+) -> Incident:
+    if incident.status == IncidentStatus.CLOSED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Closed incidents cannot be resolved again.",
+        )
+
+    resolver = (
+        db.query(User)
+        .filter(
+            User.id == resolved_by,
+            User.is_active.is_(True),
+            User.role.in_(("admin", "analyst")),
+        )
+        .first()
+    )
+
+    if resolver is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resolver not found or inactive",
+        )
+
+    incident.status = IncidentStatus.RESOLVED
+    incident.resolution_type = resolution_data.resolution_type
+    incident.resolution_summary = (
+        resolution_data.resolution_summary
+    )
+    incident.resolved_by = resolved_by
+    incident.resolved_at = _utc_now()
+
+    try:
+        if commit:
+            db.commit()
+            db.refresh(incident)
+        else:
+            db.flush()
+
+    except SQLAlchemyError:
+        db.rollback()
+        raise
+
+    return incident
 
 def delete_incident(
     db: Session,

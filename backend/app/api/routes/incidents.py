@@ -10,6 +10,7 @@ from app.schemas.incident import (
     IncidentCreate,
     IncidentNoteCreate,
     IncidentNoteResponse,
+    IncidentResolve,
     IncidentResponse,
     IncidentUpdate,
 )
@@ -24,6 +25,7 @@ from app.services.incident_service import (
     unlink_alert,
     unlink_indicator,
     update_incident,
+    resolve_incident,
 )
 
 
@@ -184,6 +186,49 @@ def update_existing_incident(
         db.refresh(updated)
 
         return updated
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post(
+    "/{incident_id}/resolve",
+    response_model=IncidentResponse,
+)
+def resolve_existing_incident(
+    incident_id: int,
+    resolution_data: IncidentResolve,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
+):
+    incident = _get_incident_or_404(
+        db,
+        incident_id,
+    )
+
+    try:
+        incident = resolve_incident(
+            db=db,
+            incident=incident,
+            resolution_data=resolution_data,
+            resolved_by=current_user.id,
+            commit=False,
+        )
+
+        audit_event(
+            db=db,
+            action="RESOLVE_INCIDENT",
+            actor=current_user.email,
+            target=f"incident:{incident.id}",
+        )
+
+        db.commit()
+        db.refresh(incident)
+
+        return incident
 
     except Exception:
         db.rollback()

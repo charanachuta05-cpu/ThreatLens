@@ -480,3 +480,76 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Incident resolution lifecycle */
+
+.incident-resolution-section {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--border-color, #263246);
+  border-radius: 12px;
+}
+
+.incident-resolution-heading {
+  margin-bottom: 16px;
+}
+
+.incident-resolution-heading span,
+.incident-resolution-details span,
+.incident-resolution-form label > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.incident-resolution-heading h3 {
+  margin: 0;
+}
+
+.incident-resolution-form {
+  display: grid;
+  gap: 14px;
+}
+
+.incident-resolution-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.incident-resolution-form select,
+.incident-resolution-form textarea {
+  width: 100%;
+}
+
+.incident-resolution-form textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.incident-resolution-form button {
+  justify-self: start;
+}
+
+.incident-resolution-details {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.incident-resolution-details strong {
+  display: block;
+}
+
+.incident-resolution-summary {
+  grid-column: 1 / -1;
+}
+
+.incident-resolution-summary p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
