@@ -6,6 +6,7 @@ import {
 
 import {
   Bell,
+  ClipboardList,
   GitBranch,
   LayoutDashboard,
   LogOut,
@@ -75,6 +76,15 @@ const navigationSections: NavigationSection[] = [
         name: "Correlation",
         path: "/correlation",
         icon: GitBranch,
+        allowedRoles: [
+          "admin",
+          "analyst",
+        ],
+      },
+      {
+        name: "Incidents",
+        path: "/incidents",
+        icon: ClipboardList,
         allowedRoles: [
           "admin",
           "analyst",

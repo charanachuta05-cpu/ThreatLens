@@ -12,6 +12,7 @@ import Alerts from "./pages/Alerts";
 import Indicators from "./pages/Indicators";
 import Investigations from "./pages/Investigations";
 import Correlation from "./pages/Correlation";
+import Incidents from "./pages/Incidents";
 import Settings from "./pages/Settings";
 
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -132,6 +133,11 @@ function App() {
           <Route
             path="/correlation"
             element={<Correlation />}
+          />
+
+          <Route
+            path="/incidents"
+            element={<Incidents />}
           />
         </Route>
 

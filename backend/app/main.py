@@ -28,6 +28,7 @@ from app.api.routes import (
     threat_intel,
     users,
 )
+from app.api.routes import incidents
 
 from app.websockets.routes import router as websocket_router
 from app.websockets.status import router as websocket_status_router
@@ -150,6 +151,7 @@ app.include_router(investigations.router)
 app.include_router(correlation.router)
 app.include_router(threat_hunting.router)
 app.include_router(dashboard.router)
+app.include_router(incidents.router)
 
 
 # -------------------------------------------------

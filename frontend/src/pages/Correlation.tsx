@@ -5,6 +5,7 @@ import {
   GitBranch,
   Search,
   ShieldCheck,
+  Siren,
 } from "lucide-react";
 import {
   useState,
@@ -15,6 +16,10 @@ import {
   getCorrelation,
   type CorrelationResponse,
 } from "../api/correlation";
+
+import {
+  createIncident,
+} from "../api/incidents";
 
 import "./Correlation.css";
 
@@ -56,6 +61,74 @@ function Correlation() {
     error,
     setError,
   ] = useState<string | null>(null);
+
+  const [
+    creatingIncident,
+    setCreatingIncident,
+  ] = useState(false);
+
+  const [
+    incidentMessage,
+    setIncidentMessage,
+  ] = useState<string | null>(null);
+
+
+  async function handleCreateIncident() {
+    if (!result) {
+      return;
+    }
+
+    setCreatingIncident(true);
+    setError(null);
+    setIncidentMessage(null);
+
+    try {
+      const relatedIndicatorIds =
+        result.related_indicators.map(
+          (item) => item.id,
+        );
+
+      const indicatorIds = Array.from(
+        new Set([
+          result.indicator.id,
+          ...relatedIndicatorIds,
+        ]),
+      );
+
+      const alertIds = Array.from(
+        new Set(
+          result.alerts.map(
+            (alert) => alert.id,
+          ),
+        ),
+      );
+
+      const incident = await createIncident({
+        title:
+          `Threat investigation: ${result.indicator.value}`,
+        description:
+          "Incident created from the ThreatLens correlation workspace.",
+        priority:
+          result.indicator.severity === "CRITICAL"
+            ? "CRITICAL"
+            : result.indicator.severity === "HIGH"
+              ? "HIGH"
+              : "MEDIUM",
+        indicator_ids: indicatorIds,
+        alert_ids: alertIds,
+      });
+
+      setIncidentMessage(
+        `Incident #${incident.id} created successfully.`,
+      );
+    } catch {
+      setError(
+        "Unable to create an incident from this correlation report.",
+      );
+    } finally {
+      setCreatingIncident(false);
+    }
+  }
 
 
   async function handleSubmit(
@@ -233,6 +306,15 @@ function Correlation() {
 
       {result && (
         <>
+          {incidentMessage && (
+            <div
+              className="correlation-incident-message"
+              role="status"
+            >
+              {incidentMessage}
+            </div>
+          )}
+
           <section className="correlation-target-card">
             <div>
               <span className="correlation-section-label">
@@ -250,11 +332,31 @@ function Correlation() {
               </p>
             </div>
 
-            <span
-              className={`correlation-severity severity-${result.indicator.severity.toLowerCase()}`}
-            >
-              {result.indicator.severity}
-            </span>
+            <div className="correlation-target-actions">
+              <span
+                className={`correlation-severity severity-${result.indicator.severity.toLowerCase()}`}
+              >
+                {result.indicator.severity}
+              </span>
+
+              <button
+                type="button"
+                className="correlation-create-incident"
+                onClick={() =>
+                  void handleCreateIncident()
+                }
+                disabled={creatingIncident}
+              >
+                <Siren
+                  size={17}
+                  aria-hidden="true"
+                />
+
+                {creatingIncident
+                  ? "Creating..."
+                  : "Create Incident"}
+              </button>
+            </div>
           </section>
 
 
