@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from app.models.access_request import AccessRequest
 from app.models.audit import AuditEvent
 from app.models.user import User
+from app.services.email_notification_service import (
+    send_analyst_access_request_email,
+)
 
 
 def utc_now() -> datetime:
@@ -76,6 +79,11 @@ def create_analyst_request(
     db.add(audit)
     db.commit()
     db.refresh(request)
+
+    send_analyst_access_request_email(
+        request,
+        current_user,
+    )
 
     return _response(request, current_user)
 

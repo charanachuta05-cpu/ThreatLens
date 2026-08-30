@@ -44,6 +44,14 @@ class Settings(BaseSettings):
 
     THREAT_INTEL_INGEST_INTERVAL_MINUTES: int = 5
 
+    # Email Notifications
+    EMAIL_NOTIFICATIONS_ENABLED: bool = False
+    ACCESS_REQUEST_ADMIN_EMAIL: str = ""
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "ThreatLens Security <onboarding@resend.dev>"
+    FRONTEND_URL: str = "http://localhost:5173"
+    EMAIL_TIMEOUT_SECONDS: float = 5.0
+
     @model_validator(mode="after")
     def validate_security_configuration(self):
         allowed_environments = {
