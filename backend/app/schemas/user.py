@@ -30,3 +30,22 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class AccessRequestResponse(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    email: EmailStr
+    requested_role: str
+    status: str
+    reviewed_by: int | None
+    created_at: datetime
+    reviewed_at: datetime | None
+
+
+class AccessRequestStatusResponse(BaseModel):
+    id: int
+    requested_role: str
+    status: str
+    created_at: datetime
+    reviewed_at: datetime | None

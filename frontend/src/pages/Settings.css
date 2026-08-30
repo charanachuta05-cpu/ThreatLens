@@ -382,3 +382,172 @@
     grid-column: 2;
   }
 }
+
+/* Analyst Access Workflow */
+
+.settings-access-card {
+  border-color: #243c55;
+}
+
+.settings-access-copy,
+.settings-access-status p {
+  margin: 0 0 16px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.settings-access-status {
+  margin-bottom: 16px;
+  padding: 13px;
+  border: 1px solid #1c3045;
+  border-radius: 8px;
+  background: #09121d;
+}
+
+.settings-access-status > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #64748b;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.settings-access-status > strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.settings-access-status p {
+  margin-bottom: 0;
+}
+
+.settings-request-pending {
+  color: #fbbf24;
+}
+
+.settings-request-approved {
+  color: #86efac;
+}
+
+.settings-request-rejected {
+  color: #fca5a5;
+}
+
+.settings-access-button,
+.settings-approve-button,
+.settings-reject-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 37px;
+  padding: 0 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-access-button,
+.settings-approve-button {
+  border: 1px solid #275675;
+  color: #bae6fd;
+  background: #10263a;
+}
+
+.settings-reject-button {
+  border: 1px solid #5f232d;
+  color: #fca5a5;
+  background: #1c1014;
+}
+
+.settings-access-button:disabled,
+.settings-approve-button:disabled,
+.settings-reject-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-access-empty {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.settings-access-empty svg {
+  color: #86efac;
+}
+
+.settings-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-request-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid #1c3045;
+  border-radius: 8px;
+  background: #09121d;
+}
+
+.settings-request-item > div:first-child {
+  min-width: 0;
+}
+
+.settings-request-item strong,
+.settings-request-item span {
+  display: block;
+}
+
+.settings-request-item strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.settings-request-item span {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.settings-request-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 7px;
+}
+
+.settings-access-message {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border: 1px solid #274b6a;
+  border-radius: 8px;
+  color: #bae6fd;
+  background: #0b1825;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+@media (max-width: 600px) {
+  .settings-request-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-request-actions {
+    width: 100%;
+  }
+
+  .settings-request-actions button {
+    flex: 1;
+  }
+}

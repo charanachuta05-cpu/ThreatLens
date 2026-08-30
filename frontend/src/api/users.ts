@@ -70,3 +70,76 @@ export async function getAdminDashboard(): Promise<
 
   return response.data;
 }
+
+export interface AccessRequest {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  requested_role: "analyst";
+  status: "pending" | "approved" | "rejected";
+  reviewed_by: number | null;
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export interface MyAccessRequest {
+  id: number;
+  requested_role: "analyst";
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export async function requestAnalystAccess(): Promise<AccessRequest> {
+  const response =
+    await apiClient.post<AccessRequest>(
+      "/users/access-requests",
+    );
+
+  return response.data;
+}
+
+export async function getMyAccessRequest(): Promise<
+  MyAccessRequest | null
+> {
+  const response =
+    await apiClient.get<MyAccessRequest | null>(
+      "/users/access-requests/me",
+    );
+
+  return response.data;
+}
+
+export async function getPendingAccessRequests(): Promise<
+  AccessRequest[]
+> {
+  const response =
+    await apiClient.get<AccessRequest[]>(
+      "/users/access-requests/pending",
+    );
+
+  return response.data;
+}
+
+export async function approveAccessRequest(
+  requestId: number,
+): Promise<AccessRequest> {
+  const response =
+    await apiClient.post<AccessRequest>(
+      `/users/access-requests/${requestId}/approve`,
+    );
+
+  return response.data;
+}
+
+export async function rejectAccessRequest(
+  requestId: number,
+): Promise<AccessRequest> {
+  const response =
+    await apiClient.post<AccessRequest>(
+      `/users/access-requests/${requestId}/reject`,
+    );
+
+  return response.data;
+}

@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bell,
   CheckCircle2,
   Database,
   KeyRound,
@@ -19,11 +20,18 @@ import {
 } from "react";
 
 import {
+  approveAccessRequest,
   getAdminDashboard,
   getCurrentUser,
   getHealthStatus,
+  getMyAccessRequest,
+  getPendingAccessRequests,
+  rejectAccessRequest,
+  requestAnalystAccess,
+  type AccessRequest,
   type CurrentUser,
   type HealthStatus,
+  type MyAccessRequest,
 } from "../api/users";
 
 import { useAuth } from "../context/useAuth";
@@ -74,6 +82,18 @@ function Settings() {
   ] = useState(false);
 
   const [error, setError] =
+    useState<string | null>(null);
+
+  const [accessRequest, setAccessRequest] =
+    useState<MyAccessRequest | null>(null);
+
+  const [pendingRequests, setPendingRequests] =
+    useState<AccessRequest[]>([]);
+
+  const [accessBusy, setAccessBusy] =
+    useState(false);
+
+  const [accessMessage, setAccessMessage] =
     useState<string | null>(null);
 
   const loadSettings = useCallback(
@@ -175,6 +195,129 @@ function Settings() {
       cancelled = true;
     };
   }, []);
+
+  const refreshAccessRequests = useCallback(
+    async () => {
+      if (role === "viewer") {
+        const request =
+          await getMyAccessRequest();
+
+        setAccessRequest(request);
+      }
+
+      if (role === "admin") {
+        const requests =
+          await getPendingAccessRequests();
+
+        setPendingRequests(requests);
+      }
+    },
+    [role],
+  );
+
+  async function handleRequestAnalystAccess() {
+    setAccessBusy(true);
+    setAccessMessage(null);
+
+    try {
+      await requestAnalystAccess();
+      await refreshAccessRequests();
+
+      setAccessMessage(
+        "Analyst access request submitted for administrator review.",
+      );
+    } catch {
+      setAccessMessage(
+        "Unable to submit the access request.",
+      );
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  async function handleApproveAccess(
+    requestId: number,
+  ) {
+    setAccessBusy(true);
+    setAccessMessage(null);
+
+    try {
+      await approveAccessRequest(requestId);
+      await refreshAccessRequests();
+
+      setAccessMessage(
+        "Analyst access approved. The user must sign in again to receive the new permissions.",
+      );
+    } catch {
+      setAccessMessage(
+        "Unable to approve the access request.",
+      );
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  async function handleRejectAccess(
+    requestId: number,
+  ) {
+    setAccessBusy(true);
+    setAccessMessage(null);
+
+    try {
+      await rejectAccessRequest(requestId);
+      await refreshAccessRequests();
+
+      setAccessMessage(
+        "Analyst access request rejected.",
+      );
+    } catch {
+      setAccessMessage(
+        "Unable to reject the access request.",
+      );
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (role === "viewer") {
+      void getMyAccessRequest()
+        .then((request) => {
+          if (!cancelled) {
+            setAccessRequest(request);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAccessMessage(
+              "Unable to load access request status.",
+            );
+          }
+        });
+    }
+
+    if (role === "admin") {
+      void getPendingAccessRequests()
+        .then((requests) => {
+          if (!cancelled) {
+            setPendingRequests(requests);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAccessMessage(
+              "Unable to load pending access requests.",
+            );
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
 
   const roleDescription =
     getRoleDescription(role);
@@ -612,6 +755,190 @@ function Settings() {
             </div>
           </div>
         </article>
+
+        {/* Analyst Access Request */}
+
+        {role === "viewer" && (
+          <article className="settings-card settings-access-card">
+            <div className="settings-card-heading">
+              <div className="settings-icon">
+                <ShieldCheck
+                  size={20}
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div>
+                <h2>
+                  Analyst Access
+                </h2>
+
+                <p>
+                  Request elevated SOC permissions
+                </p>
+              </div>
+            </div>
+
+            {accessRequest ? (
+              <div className="settings-access-status">
+                <span>
+                  Request status
+                </span>
+
+                <strong
+                  className={`settings-request-${accessRequest.status}`}
+                >
+                  {accessRequest.status.toUpperCase()}
+                </strong>
+
+                {accessRequest.status === "approved" && (
+                  <p>
+                    Your Analyst access was approved.
+                    Sign out and sign in again to
+                    activate your new permissions.
+                  </p>
+                )}
+
+                {accessRequest.status === "rejected" && (
+                  <p>
+                    Your previous request was rejected.
+                    You may submit another request for
+                    administrator review.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="settings-access-copy">
+                Your account currently has Viewer
+                access. Submit a request if you need
+                Analyst permissions for SOC operations.
+              </p>
+            )}
+
+            {(!accessRequest ||
+              accessRequest.status === "rejected") && (
+              <button
+                type="button"
+                className="settings-access-button"
+                onClick={() =>
+                  void handleRequestAnalystAccess()
+                }
+                disabled={accessBusy}
+              >
+                <ShieldCheck
+                  size={16}
+                  aria-hidden="true"
+                />
+
+                {accessBusy
+                  ? "Submitting..."
+                  : "Request Analyst Access"}
+              </button>
+            )}
+          </article>
+        )}
+
+        {/* Admin Access Requests */}
+
+        {role === "admin" && (
+          <article className="settings-card settings-access-card">
+            <div className="settings-card-heading">
+              <div className="settings-icon settings-admin-icon">
+                <Bell
+                  size={20}
+                  aria-hidden="true"
+                />
+              </div>
+
+              <div>
+                <h2>
+                  Analyst Access Requests
+                </h2>
+
+                <p>
+                  {pendingRequests.length}
+                  {" "}
+                  pending request
+                  {pendingRequests.length === 1
+                    ? ""
+                    : "s"}
+                </p>
+              </div>
+            </div>
+
+            {pendingRequests.length === 0 ? (
+              <div className="settings-access-empty">
+                <CheckCircle2
+                  size={17}
+                  aria-hidden="true"
+                />
+
+                <span>
+                  No Analyst access requests
+                  are waiting for review.
+                </span>
+              </div>
+            ) : (
+              <div className="settings-request-list">
+                {pendingRequests.map(
+                  (request) => (
+                    <div
+                      className="settings-request-item"
+                      key={request.id}
+                    >
+                      <div>
+                        <strong>
+                          {request.username}
+                        </strong>
+
+                        <span>
+                          {request.email}
+                        </span>
+                      </div>
+
+                      <div className="settings-request-actions">
+                        <button
+                          type="button"
+                          className="settings-approve-button"
+                          disabled={accessBusy}
+                          onClick={() =>
+                            void handleApproveAccess(
+                              request.id,
+                            )
+                          }
+                        >
+                          Approve
+                        </button>
+
+                        <button
+                          type="button"
+                          className="settings-reject-button"
+                          disabled={accessBusy}
+                          onClick={() =>
+                            void handleRejectAccess(
+                              request.id,
+                            )
+                          }
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+          </article>
+        )}
+
+        {accessMessage && (
+          <div
+            className="settings-access-message"
+            role="status"
+          >
+            {accessMessage}
+          </div>
+        )}
 
         {/* Admin Only */}
 
