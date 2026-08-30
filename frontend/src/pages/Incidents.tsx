@@ -26,6 +26,11 @@ import {
   type IncidentStatus,
 } from "../api/incidents";
 
+import {
+  getAssignableUsers,
+  type AssignableUser,
+} from "../api/users";
+
 import "./Incidents.css";
 
 const priorities: IncidentPriority[] = [
@@ -57,6 +62,9 @@ function readableStatus(value: string): string {
 function Incidents() {
   const [incidents, setIncidents] =
     useState<Incident[]>([]);
+
+  const [assignableUsers, setAssignableUsers] =
+    useState<AssignableUser[]>([]);
 
   const [selectedIncident, setSelectedIncident] =
     useState<Incident | null>(null);
@@ -92,6 +100,9 @@ function Incidents() {
     useState<IncidentPriority>("MEDIUM");
 
   const [note, setNote] =
+    useState("");
+
+  const [selectedAssignee, setSelectedAssignee] =
     useState("");
 
   const loadIncidents = useCallback(
@@ -147,6 +158,37 @@ function Incidents() {
     };
   }, [loadIncidents]);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void getAssignableUsers()
+        .then((users) => {
+          setAssignableUsers(users);
+        })
+        .catch(() => {
+          setAssignableUsers([]);
+        });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSelectedAssignee(
+        selectedIncident?.assigned_to
+          ? String(selectedIncident.assigned_to)
+          : "",
+      );
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [selectedIncident]);
+
+
   async function handleCreate(
     event: FormEvent<HTMLFormElement>,
   ) {
@@ -192,6 +234,64 @@ function Incidents() {
       setSaving(false);
     }
   }
+
+  async function handleAssignmentChange() {
+    if (!selectedIncident) {
+      return;
+    }
+
+    const assignedTo =
+      selectedAssignee === ""
+        ? null
+        : Number(selectedAssignee);
+
+    if (
+      assignedTo !== null
+      && (
+        !Number.isInteger(assignedTo)
+        || assignedTo < 1
+      )
+    ) {
+      setError("Invalid incident assignee.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const updated = await updateIncident(
+        selectedIncident.id,
+        {
+          assigned_to: assignedTo,
+        },
+      );
+
+      setSelectedIncident(updated);
+
+      setIncidents((current) =>
+        current.map((incident) =>
+          incident.id === updated.id
+            ? updated
+            : incident,
+        ),
+      );
+
+      setSuccess(
+        assignedTo === null
+          ? `Incident #${updated.id} unassigned.`
+          : `Incident #${updated.id} assigned successfully.`,
+      );
+    } catch {
+      setError(
+        "Unable to update incident assignment.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
 
   async function handleStatusChange(
     status: IncidentStatus,
@@ -282,6 +382,25 @@ function Incidents() {
       setSaving(false);
     }
   }
+
+  function getAssigneeName(
+    userId: number | null,
+  ): string {
+    if (userId === null) {
+      return "Unassigned";
+    }
+
+    const user = assignableUsers.find(
+      (item) => item.id === userId,
+    );
+
+    if (!user) {
+      return `User #${userId}`;
+    }
+
+    return `${user.username} (${user.role})`;
+  }
+
 
   const openCount = incidents.filter(
     (incident) =>
@@ -646,12 +765,11 @@ function Incidents() {
 
                 <div>
                   <span>Assigned To</span>
+
                   <strong>
-                    {
-                      selectedIncident
-                        .assigned_to
-                      ?? "Unassigned"
-                    }
+                    {getAssigneeName(
+                      selectedIncident.assigned_to,
+                    )}
                   </strong>
                 </div>
 
@@ -665,6 +783,52 @@ function Incidents() {
                       )
                     }
                   </strong>
+                </div>
+              </div>
+
+              <div className="incident-assignment-section">
+                <div>
+                  <span>CASE OWNERSHIP</span>
+                  <h3>Assign Analyst</h3>
+                </div>
+
+                <div className="incident-assignment-controls">
+                  <select
+                    value={selectedAssignee}
+                    disabled={saving}
+                    onChange={(event) =>
+                      setSelectedAssignee(
+                        event.target.value,
+                      )
+                    }
+                  >
+                    <option value="">
+                      Unassigned
+                    </option>
+
+                    {assignableUsers.map((user) => (
+                      <option
+                        key={user.id}
+                        value={user.id}
+                      >
+                        {user.username}
+                        {" — "}
+                        {user.role}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() =>
+                      void handleAssignmentChange()
+                    }
+                  >
+                    {saving
+                      ? "Saving..."
+                      : "Update Assignment"}
+                  </button>
                 </div>
               </div>
 
