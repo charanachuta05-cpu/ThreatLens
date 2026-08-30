@@ -10,6 +10,8 @@ import Dashboard from "./pages/Dashboard";
 import Alerts from "./pages/Alerts";
 import Indicators from "./pages/Indicators";
 import Investigations from "./pages/Investigations";
+import Settings from "./pages/Settings";
+
 import DashboardLayout from "./layouts/DashboardLayout";
 import RoleRoute from "./components/RoleRoute";
 
@@ -41,6 +43,7 @@ function App() {
 
   return (
     <Routes>
+
       {/* =========================
           Authentication
       ========================= */}
@@ -89,6 +92,7 @@ function App() {
           )
         }
       >
+
         <Route
           path="/dashboard"
           element={<Dashboard />}
@@ -123,6 +127,16 @@ function App() {
           path="/alerts"
           element={<Alerts />}
         />
+
+        {/* =========================
+            Settings
+        ========================= */}
+
+        <Route
+          path="/settings"
+          element={<Settings />}
+        />
+
       </Route>
 
       {/* =========================
@@ -145,6 +159,7 @@ function App() {
           )
         }
       />
+
     </Routes>
   );
 }

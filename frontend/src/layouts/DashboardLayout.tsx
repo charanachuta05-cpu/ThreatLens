@@ -4,15 +4,18 @@ import {
 } from "react-router-dom";
 
 import {
-  LayoutDashboard,
-  ShieldAlert,
-  Search,
   Bell,
+  LayoutDashboard,
   LogOut,
+  Search,
+  Settings,
+  ShieldAlert,
 } from "lucide-react";
 
 import { useAuth } from "../context/useAuth";
-import type { UserRole } from "../context/AuthContextDefinition";
+import type {
+  UserRole,
+} from "../context/AuthContextDefinition";
 
 import "./DashboardLayout.css";
 
@@ -38,12 +41,20 @@ const navigation: NavigationItem[] = [
     name: "Investigations",
     path: "/investigations",
     icon: ShieldAlert,
-    allowedRoles: ["admin", "analyst"],
+    allowedRoles: [
+      "admin",
+      "analyst",
+    ],
   },
   {
     name: "Alerts",
     path: "/alerts",
     icon: Bell,
+  },
+  {
+    name: "Settings",
+    path: "/settings",
+    icon: Settings,
   },
 ];
 
@@ -90,6 +101,16 @@ function DashboardLayout() {
   const roleDescription =
     getRoleDescription(role);
 
+  const visibleNavigation =
+    navigation.filter(
+      (item) =>
+        !item.allowedRoles ||
+        (
+          role &&
+          item.allowedRoles.includes(role)
+        ),
+    );
+
   return (
     <div className="dashboard-layout">
 
@@ -102,7 +123,6 @@ function DashboardLayout() {
         {/* Brand */}
 
         <div className="sidebar-brand">
-
           <div>
             <h1>
               ThreatLens
@@ -112,7 +132,6 @@ function DashboardLayout() {
               Security Intelligence
             </span>
           </div>
-
         </div>
 
         {/* Navigation */}
@@ -121,22 +140,14 @@ function DashboardLayout() {
           className="sidebar-nav"
           aria-label="Primary navigation"
         >
-
           <p className="nav-label">
             MONITORING
           </p>
 
-          {navigation
-            .filter(
-              (item) =>
-                !item.allowedRoles ||
-                (role &&
-                  item.allowedRoles.includes(role)),
-            )
-            .map(
-              (item) => {
-                const Icon =
-                  item.icon;
+          {visibleNavigation.map(
+            (item) => {
+              const Icon =
+                item.icon;
 
               return (
                 <NavLink
@@ -161,16 +172,14 @@ function DashboardLayout() {
                     {item.name}
                   </span>
                 </NavLink>
-                );
-              },
-            )}
-
+              );
+            },
+          )}
         </nav>
 
         {/* Bottom Controls */}
 
         <div className="sidebar-bottom">
-
           <button
             type="button"
             className="logout-button"
@@ -185,9 +194,7 @@ function DashboardLayout() {
               Logout
             </span>
           </button>
-
         </div>
-
       </aside>
 
       {/* ==========================================
@@ -202,7 +209,6 @@ function DashboardLayout() {
 
           <div>
             <span className="system-status">
-
               <span
                 className="status-dot"
                 aria-hidden="true"
@@ -210,7 +216,6 @@ function DashboardLayout() {
 
               Threat Intelligence
               Engine Online
-
             </span>
           </div>
 
@@ -228,7 +233,6 @@ function DashboardLayout() {
             </div>
 
             <div className="topbar-user-info">
-
               <strong>
                 {formattedRole}
               </strong>
@@ -236,11 +240,9 @@ function DashboardLayout() {
               <span>
                 {roleDescription}
               </span>
-
             </div>
 
           </div>
-
         </header>
 
         {/* Page Content */}
@@ -250,7 +252,6 @@ function DashboardLayout() {
         </div>
 
       </main>
-
     </div>
   );
 }
