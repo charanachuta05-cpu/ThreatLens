@@ -6,10 +6,12 @@ import {
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+
 import Dashboard from "./pages/Dashboard";
 import Alerts from "./pages/Alerts";
 import Indicators from "./pages/Indicators";
 import Investigations from "./pages/Investigations";
+import Correlation from "./pages/Correlation";
 import Settings from "./pages/Settings";
 
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -17,11 +19,13 @@ import RoleRoute from "./components/RoleRoute";
 
 import { useAuth } from "./context/useAuth";
 
+
 function App() {
   const {
     authenticated,
     loading,
   } = useAuth();
+
 
   if (loading) {
     return (
@@ -40,6 +44,7 @@ function App() {
       </div>
     );
   }
+
 
   return (
     <Routes>
@@ -76,6 +81,7 @@ function App() {
         }
       />
 
+
       {/* =========================
           Protected Application
       ========================= */}
@@ -103,6 +109,7 @@ function App() {
           element={<Indicators />}
         />
 
+
         {/* =========================
             Analyst/Admin Routes
         ========================= */}
@@ -121,12 +128,19 @@ function App() {
             path="/investigations"
             element={<Investigations />}
           />
+
+          <Route
+            path="/correlation"
+            element={<Correlation />}
+          />
         </Route>
+
 
         <Route
           path="/alerts"
           element={<Alerts />}
         />
+
 
         {/* =========================
             Settings
@@ -138,6 +152,7 @@ function App() {
         />
 
       </Route>
+
 
       {/* =========================
           Unknown Routes
@@ -163,5 +178,6 @@ function App() {
     </Routes>
   );
 }
+
 
 export default App;

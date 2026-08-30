@@ -1,10 +1,12 @@
 import {
   NavLink,
   Outlet,
+  useNavigate,
 } from "react-router-dom";
 
 import {
   Bell,
+  GitBranch,
   LayoutDashboard,
   LogOut,
   Search,
@@ -13,11 +15,13 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "../context/useAuth";
+
 import type {
   UserRole,
 } from "../context/AuthContextDefinition";
 
 import "./DashboardLayout.css";
+
 
 interface NavigationItem {
   name: string;
@@ -26,37 +30,71 @@ interface NavigationItem {
   allowedRoles?: UserRole[];
 }
 
-const navigation: NavigationItem[] = [
+
+interface NavigationSection {
+  label: string;
+  items: NavigationItem[];
+}
+
+
+const navigationSections: NavigationSection[] = [
   {
-    name: "Dashboard",
-    path: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    name: "Indicators",
-    path: "/indicators",
-    icon: Search,
-  },
-  {
-    name: "Investigations",
-    path: "/investigations",
-    icon: ShieldAlert,
-    allowedRoles: [
-      "admin",
-      "analyst",
+    label: "MONITORING",
+    items: [
+      {
+        name: "Dashboard",
+        path: "/dashboard",
+        icon: LayoutDashboard,
+      },
+      {
+        name: "Indicators",
+        path: "/indicators",
+        icon: Search,
+      },
+      {
+        name: "Investigations",
+        path: "/investigations",
+        icon: ShieldAlert,
+        allowedRoles: [
+          "admin",
+          "analyst",
+        ],
+      },
+      {
+        name: "Alerts",
+        path: "/alerts",
+        icon: Bell,
+      },
     ],
   },
+
   {
-    name: "Alerts",
-    path: "/alerts",
-    icon: Bell,
+    label: "ANALYSIS",
+    items: [
+      {
+        name: "Correlation",
+        path: "/correlation",
+        icon: GitBranch,
+        allowedRoles: [
+          "admin",
+          "analyst",
+        ],
+      },
+    ],
   },
+
   {
-    name: "Settings",
-    path: "/settings",
-    icon: Settings,
+    label: "SYSTEM",
+    items: [
+      {
+        name: "Settings",
+        path: "/settings",
+        icon: Settings,
+      },
+    ],
   },
 ];
+
 
 function formatRole(
   role: UserRole | null,
@@ -66,10 +104,11 @@ function formatRole(
   }
 
   return (
-    role.charAt(0).toUpperCase() +
-    role.slice(1)
+    role.charAt(0).toUpperCase()
+    + role.slice(1)
   );
 }
+
 
 function getRoleDescription(
   role: UserRole | null,
@@ -89,11 +128,15 @@ function getRoleDescription(
   }
 }
 
+
 function DashboardLayout() {
+  const navigate = useNavigate();
+
   const {
     logout,
     role,
   } = useAuth();
+
 
   const formattedRole =
     formatRole(role);
@@ -101,15 +144,40 @@ function DashboardLayout() {
   const roleDescription =
     getRoleDescription(role);
 
-  const visibleNavigation =
-    navigation.filter(
-      (item) =>
-        !item.allowedRoles ||
-        (
-          role &&
-          item.allowedRoles.includes(role)
+
+  const visibleSections =
+    navigationSections
+      .map((section) => ({
+        ...section,
+
+        items: section.items.filter(
+          (item) =>
+            !item.allowedRoles
+            || (
+              role
+              && item.allowedRoles.includes(
+                role,
+              )
+            ),
         ),
+      }))
+      .filter(
+        (section) =>
+          section.items.length > 0,
+      );
+
+
+  function handleLogout() {
+    logout();
+
+    navigate(
+      "/login",
+      {
+        replace: true,
+      },
     );
+  }
+
 
   return (
     <div className="dashboard-layout">
@@ -134,48 +202,61 @@ function DashboardLayout() {
           </div>
         </div>
 
+
         {/* Navigation */}
 
         <nav
           className="sidebar-nav"
           aria-label="Primary navigation"
         >
-          <p className="nav-label">
-            MONITORING
-          </p>
+          {visibleSections.map(
+            (section) => (
+              <div
+                key={section.label}
+                className="nav-group"
+              >
+                <p className="nav-label">
+                  {section.label}
+                </p>
 
-          {visibleNavigation.map(
-            (item) => {
-              const Icon =
-                item.icon;
+                <div className="nav-group-items">
+                  {section.items.map(
+                    (item) => {
+                      const Icon =
+                        item.icon;
 
-              return (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  className={({
-                    isActive,
-                  }) =>
-                    `nav-item ${
-                      isActive
-                        ? "active"
-                        : ""
-                    }`
-                  }
-                >
-                  <Icon
-                    size={19}
-                    aria-hidden="true"
-                  />
+                      return (
+                        <NavLink
+                          key={item.path}
+                          to={item.path}
+                          className={({
+                            isActive,
+                          }) =>
+                            `nav-item ${
+                              isActive
+                                ? "active"
+                                : ""
+                            }`
+                          }
+                        >
+                          <Icon
+                            size={19}
+                            aria-hidden="true"
+                          />
 
-                  <span>
-                    {item.name}
-                  </span>
-                </NavLink>
-              );
-            },
+                          <span>
+                            {item.name}
+                          </span>
+                        </NavLink>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+            ),
           )}
         </nav>
+
 
         {/* Bottom Controls */}
 
@@ -183,7 +264,7 @@ function DashboardLayout() {
           <button
             type="button"
             className="logout-button"
-            onClick={logout}
+            onClick={handleLogout}
           >
             <LogOut
               size={19}
@@ -195,7 +276,9 @@ function DashboardLayout() {
             </span>
           </button>
         </div>
+
       </aside>
+
 
       {/* ==========================================
           Main Content
@@ -218,6 +301,7 @@ function DashboardLayout() {
               Engine Online
             </span>
           </div>
+
 
           {/* Authenticated User */}
 
@@ -243,7 +327,9 @@ function DashboardLayout() {
             </div>
 
           </div>
+
         </header>
+
 
         {/* Page Content */}
 
@@ -252,8 +338,10 @@ function DashboardLayout() {
         </div>
 
       </main>
+
     </div>
   );
 }
+
 
 export default DashboardLayout;

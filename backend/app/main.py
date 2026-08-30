@@ -21,6 +21,7 @@ from app.api.routes import (
     admin,
     alerts,
     auth,
+    correlation,
     dashboard,
     investigations,
     threat_hunting,
@@ -146,6 +147,7 @@ app.include_router(websocket_status_router)
 
 app.include_router(threat_intel.router)
 app.include_router(investigations.router)
+app.include_router(correlation.router)
 app.include_router(threat_hunting.router)
 app.include_router(dashboard.router)
 
