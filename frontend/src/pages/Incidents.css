@@ -553,3 +553,125 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Incident case timeline */
+
+.incident-timeline-section {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--border-color, #263246);
+  border-radius: 12px;
+}
+
+.incident-timeline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.incident-timeline-heading span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.incident-timeline-heading h3 {
+  margin: 0;
+}
+
+.incident-timeline {
+  display: grid;
+}
+
+.incident-timeline-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 18px;
+}
+
+.incident-timeline-event:last-child {
+  padding-bottom: 0;
+}
+
+.incident-timeline-event:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 0;
+  left: 5px;
+  width: 1px;
+  background: var(--border-color, #334155);
+}
+
+.incident-timeline-marker {
+  position: relative;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  margin-top: 5px;
+  border: 2px solid #64748b;
+  border-radius: 999px;
+  background: #0f172a;
+}
+
+.incident-timeline-marker.is-note {
+  border-color: #38bdf8;
+}
+
+.incident-timeline-marker.is-audit {
+  border-color: #818cf8;
+}
+
+.incident-timeline-content {
+  min-width: 0;
+  padding: 0 0 2px;
+}
+
+.incident-timeline-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.incident-timeline-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.incident-timeline-meta > span {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  opacity: 0.65;
+}
+
+.incident-timeline-actor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.incident-timeline-actor span:first-child {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 700px) {
+  .incident-timeline-meta {
+    display: grid;
+    gap: 5px;
+  }
+
+  .incident-timeline-meta > span {
+    flex-shrink: 1;
+  }
+}

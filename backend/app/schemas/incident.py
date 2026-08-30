@@ -162,6 +162,15 @@ class IncidentIndicatorResponse(BaseModel):
     )
 
 
+class IncidentTimelineEvent(BaseModel):
+    id: str
+    event_type: str
+    action: str
+    actor: str
+    description: str
+    created_at: datetime
+
+
 class IncidentResponse(BaseModel):
     id: int
     title: str

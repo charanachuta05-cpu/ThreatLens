@@ -1,3 +1,5 @@
+from datetime import timezone
+
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -6,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
+from app.models.audit import AuditEvent
 from app.models.incident import (
     Incident,
     IncidentNote,
@@ -324,6 +327,90 @@ def resolve_incident(
         raise
 
     return incident
+
+def get_incident_timeline(
+    db: Session,
+    incident: Incident,
+) -> list[dict]:
+    target = f"incident:{incident.id}"
+
+    audit_events = (
+        db.query(AuditEvent)
+        .filter(AuditEvent.target == target)
+        .order_by(
+            AuditEvent.created_at.asc(),
+            AuditEvent.id.asc(),
+        )
+        .all()
+    )
+
+    descriptions = {
+        "CREATE_INCIDENT": "Incident created",
+        "UPDATE_INCIDENT": "Incident updated",
+        "ASSIGN_INCIDENT": "Case ownership updated",
+        "RESOLVE_INCIDENT": "Incident resolved",
+        "CLOSE_INCIDENT": "Incident closed",
+        "ADD_INCIDENT_NOTE": "Case note added",
+        "LINK_INCIDENT_ALERT": "Alert linked",
+        "UNLINK_INCIDENT_ALERT": "Alert unlinked",
+        "LINK_INCIDENT_INDICATOR": "Indicator linked",
+        "UNLINK_INCIDENT_INDICATOR": "Indicator unlinked",
+    }
+
+    def normalize_utc(value):
+        if value.tzinfo is None:
+            return value
+
+        return (
+            value.astimezone(timezone.utc)
+            .replace(tzinfo=None)
+        )
+
+    timeline: list[dict] = []
+
+    for event in audit_events:
+        timeline.append(
+            {
+                "id": f"audit-{event.id}",
+                "event_type": "AUDIT",
+                "action": event.action,
+                "actor": event.actor,
+                "description": descriptions.get(
+                    event.action,
+                    event.action.replace(
+                        "_",
+                        " ",
+                    ).title(),
+                ),
+                "created_at": normalize_utc(
+                    event.created_at
+                ),
+            }
+        )
+
+    for note in incident.notes:
+        timeline.append(
+            {
+                "id": f"note-{note.id}",
+                "event_type": "NOTE",
+                "action": "INCIDENT_NOTE",
+                "actor": f"user:{note.author_id}",
+                "description": note.content,
+                "created_at": normalize_utc(
+                    note.created_at
+                ),
+            }
+        )
+
+    timeline.sort(
+        key=lambda item: (
+            item["created_at"],
+            item["id"],
+        ),
+        reverse=True,
+    )
+
+    return timeline
 
 def delete_incident(
     db: Session,

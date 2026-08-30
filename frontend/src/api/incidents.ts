@@ -66,6 +66,15 @@ export interface Incident {
   notes: IncidentNote[];
 }
 
+export interface IncidentTimelineEvent {
+  id: string;
+  event_type: "AUDIT" | "NOTE";
+  action: string;
+  actor: string;
+  description: string;
+  created_at: string;
+}
+
 export interface IncidentCreate {
   title: string;
   description: string;
@@ -105,6 +114,18 @@ export async function getIncidents(
     {
       params,
     },
+  );
+
+  return response.data;
+}
+
+export async function getIncidentTimeline(
+  incidentId: number,
+): Promise<IncidentTimelineEvent[]> {
+  const response = await apiClient.get<
+    IncidentTimelineEvent[]
+  >(
+    `/incidents/${incidentId}/timeline`,
   );
 
   return response.data;

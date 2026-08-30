@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 from app.core.database import SessionLocal
@@ -480,3 +482,112 @@ def test_admin_can_delete_incident(client):
     )
 
     assert response.status_code == 404
+
+
+def test_analyst_can_read_incident_timeline(
+    client,
+):
+    analyst_headers = make_headers(
+        2,
+        "analyst@threatlens.com",
+        "analyst",
+    )
+
+    create_response = client.post(
+        "/incidents/",
+        headers=analyst_headers,
+        json={
+            "title": f"{TEST_PREFIX} Timeline Validation",
+            "description": "Validate chronological incident timeline.",
+            "priority": "HIGH",
+        },
+    )
+
+    assert create_response.status_code == 201
+    incident_id = create_response.json()["id"]
+
+    note_response = client.post(
+        f"/incidents/{incident_id}/notes",
+        headers=analyst_headers,
+        json={
+            "content": "Timeline validation note.",
+        },
+    )
+
+    assert note_response.status_code == 201
+
+    response = client.get(
+        f"/incidents/{incident_id}/timeline",
+        headers=analyst_headers,
+    )
+
+    assert response.status_code == 200
+
+    timeline = response.json()
+
+    assert timeline
+    assert any(
+        event["action"] == "CREATE_INCIDENT"
+        for event in timeline
+    )
+    assert any(
+        event["action"] == "ADD_INCIDENT_NOTE"
+        for event in timeline
+    )
+    assert any(
+        event["event_type"] == "NOTE"
+        and event["description"]
+        == "Timeline validation note."
+        for event in timeline
+    )
+
+    timestamps = [
+        datetime.fromisoformat(
+            event["created_at"].replace(
+                "Z",
+                "+00:00",
+            )
+        ).timestamp()
+        for event in timeline
+    ]
+
+    assert timestamps == sorted(
+        timestamps,
+        reverse=True,
+    )
+
+
+def test_viewer_cannot_read_incident_timeline(
+    client,
+):
+    admin_headers = make_headers(
+        1,
+        "admin@threatlens.com",
+        "admin",
+    )
+
+    viewer_headers = make_headers(
+        3,
+        "viewer@threatlens.com",
+        "viewer",
+    )
+
+    create_response = client.post(
+        "/incidents/",
+        headers=admin_headers,
+        json={
+            "title": f"{TEST_PREFIX} Protected Timeline",
+            "description": "Validate timeline RBAC.",
+            "priority": "MEDIUM",
+        },
+    )
+
+    assert create_response.status_code == 201
+    incident_id = create_response.json()["id"]
+
+    response = client.get(
+        f"/incidents/{incident_id}/timeline",
+        headers=viewer_headers,
+    )
+
+    assert response.status_code == 403

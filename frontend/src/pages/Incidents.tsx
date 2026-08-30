@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ClipboardList,
   FileText,
+  History,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -19,12 +20,14 @@ import type {
 import {
   addIncidentNote,
   createIncident,
+  getIncidentTimeline,
   getIncidents,
   resolveIncident,
   updateIncident,
   type Incident,
   type IncidentPriority,
   type IncidentResolutionType,
+  type IncidentTimelineEvent,
   type IncidentStatus,
 } from "../api/incidents";
 
@@ -77,6 +80,12 @@ function Incidents() {
 
   const [selectedIncident, setSelectedIncident] =
     useState<Incident | null>(null);
+
+  const [timeline, setTimeline] =
+    useState<IncidentTimelineEvent[]>([]);
+
+  const [timelineLoading, setTimelineLoading] =
+    useState(false);
 
   const [loading, setLoading] =
     useState(true);
@@ -209,6 +218,42 @@ function Incidents() {
     };
   }, [selectedIncident]);
 
+
+  useEffect(() => {
+    const incidentId = selectedIncident?.id;
+
+    if (!incidentId) {
+      return;
+    }
+
+    let active = true;
+
+    const timeoutId = window.setTimeout(() => {
+      setTimelineLoading(true);
+
+      void getIncidentTimeline(incidentId)
+        .then((events) => {
+          if (active) {
+            setTimeline(events);
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setTimeline([]);
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setTimelineLoading(false);
+          }
+        });
+    }, 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [selectedIncident]);
 
   async function handleCreate(
     event: FormEvent<HTMLFormElement>,
@@ -1114,6 +1159,76 @@ function Incidents() {
                     </div>
                   )
                 }
+              </div>
+
+              <div className="incident-timeline-section">
+                <div className="incident-timeline-heading">
+                  <div>
+                    <span>CASE ACTIVITY</span>
+                    <h3>Case Timeline</h3>
+                  </div>
+
+                  <History
+                    size={20}
+                    aria-hidden="true"
+                  />
+                </div>
+
+                {timelineLoading ? (
+                  <p className="incident-muted">
+                    Loading case activity...
+                  </p>
+                ) : timeline.length === 0 ? (
+                  <p className="incident-muted">
+                    No timeline activity is available.
+                  </p>
+                ) : (
+                  <div className="incident-timeline">
+                    {timeline.map((event) => (
+                      <article
+                        className="incident-timeline-event"
+                        key={event.id}
+                      >
+                        <div
+                          className={
+                            `incident-timeline-marker ${
+                              event.event_type === "NOTE"
+                                ? "is-note"
+                                : "is-audit"
+                            }`
+                          }
+                          aria-hidden="true"
+                        />
+
+                        <div className="incident-timeline-content">
+                          <div className="incident-timeline-meta">
+                            <strong>
+                              {event.description}
+                            </strong>
+
+                            <span>
+                              {formatDate(event.created_at)}
+                            </span>
+                          </div>
+
+                          <div className="incident-timeline-actor">
+                            <span>
+                              {event.event_type === "NOTE"
+                                ? "CASE NOTE"
+                                : readableStatus(
+                                    event.action,
+                                  )}
+                            </span>
+
+                            <span>
+                              {event.actor}
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="incident-notes-section">

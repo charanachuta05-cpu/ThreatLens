@@ -12,6 +12,7 @@ from app.schemas.incident import (
     IncidentNoteResponse,
     IncidentResolve,
     IncidentResponse,
+    IncidentTimelineEvent,
     IncidentUpdate,
 )
 from app.services.incident_service import (
@@ -19,6 +20,7 @@ from app.services.incident_service import (
     create_incident,
     delete_incident,
     get_incident_by_id,
+    get_incident_timeline,
     get_incidents,
     link_alert,
     link_indicator,
@@ -190,6 +192,28 @@ def update_existing_incident(
     except Exception:
         db.rollback()
         raise
+
+
+@router.get(
+    "/{incident_id}/timeline",
+    response_model=list[IncidentTimelineEvent],
+)
+def read_incident_timeline(
+    incident_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles("admin", "analyst")
+    ),
+):
+    incident = _get_incident_or_404(
+        db,
+        incident_id,
+    )
+
+    return get_incident_timeline(
+        db=db,
+        incident=incident,
+    )
 
 
 @router.post(
